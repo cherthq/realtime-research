@@ -1,0 +1,8 @@
+# Copy into your personal SSH config and replace the placeholders.
+# Never put the private key in this repository.
+Host chert-lambda
+    HostName REPLACE_WITH_LAMBDA_IP
+    User ubuntu
+    IdentityFile ~/.ssh/REPLACE_WITH_PRIVATE_KEY
+    IdentitiesOnly yes
+    ServerAliveInterval 30
