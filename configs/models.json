@@ -1,0 +1,29 @@
+{
+  "liveavatar": {
+    "name": "Live Avatar",
+    "repo": "https://github.com/Alibaba-Quark/LiveAvatar.git",
+    "commit": "c3c47d031d8bf3247428333c1fe610579c71a551",
+    "python": "3.10",
+    "readme": "https://github.com/Alibaba-Quark/LiveAvatar/blob/c3c47d031d8bf3247428333c1fe610579c71a551/README.md",
+    "weights": ["Wan-AI/Wan2.2-S2V-14B", "Quark-Vision/Live-Avatar"],
+    "notes": "Distilled streaming baseline. Training code marked unreleased upstream; verify before fine-tuning."
+  },
+  "flashtalk": {
+    "name": "SoulX-FlashTalk-14B",
+    "repo": "https://github.com/Soul-AILab/SoulX-FlashTalk.git",
+    "commit": "2ba2e1e801d59a9f526212a5aae5d374db8f2978",
+    "python": "3.10",
+    "readme": "https://github.com/Soul-AILab/SoulX-FlashTalk/blob/2ba2e1e801d59a9f526212a5aae5d374db8f2978/README.md",
+    "weights": ["Soul-AILab/SoulX-FlashTalk-14B", "TencentGameMate/chinese-wav2vec2-base"],
+    "notes": "Already distilled; inference release is not a verified fine-tuning pipeline."
+  },
+  "hunyuan_avatar": {
+    "name": "HunyuanVideo-Avatar",
+    "repo": "https://github.com/Tencent-Hunyuan/HunyuanVideo-Avatar.git",
+    "commit": "8c31d0d489df8418fa36a2a709ebdf0b47c7bf06",
+    "python": "3.10.9",
+    "readme": "https://github.com/Tencent-Hunyuan/HunyuanVideo-Avatar/blob/8c31d0d489df8418fa36a2a709ebdf0b47c7bf06/README.md",
+    "weights": ["tencent/HunyuanVideo-Avatar"],
+    "notes": "Offline quality baseline. Use upstream weights/README.md for auxiliary components. Tencent community license."
+  }
+}
