@@ -5,14 +5,13 @@ cumulative acquisition caps persist across invocations. Scheduling is separate.
 """
 
 import argparse
-from dataclasses import asdict
 import json
 from pathlib import Path
 import shutil
 import sys
 import time
 
-from .core import ROOT, Source, file_hash, read_json, read_jsonl, write_json, write_jsonl
+from .core import ROOT, Source, file_hash, read_json, read_jsonl
 from .pipeline import dataset_lock, fetch_one, source_record_path
 from .queue import Queue
 
@@ -186,6 +185,8 @@ def main(argv=None):
     review.add_argument("manifest", type=Path)
     source_review = commands.add_parser("source-review")
     source_review.add_argument("manifest", type=Path)
+    retry = commands.add_parser("retry", help="Retry a failed source after resolving its recorded error")
+    retry.add_argument("source_id")
     publish_cmd = commands.add_parser("publish")
     publish_cmd.add_argument("--repo-id", default="garyzgao/facetime-video")
     publish_cmd.add_argument("--dry-run", action="store_true")
@@ -213,6 +214,15 @@ def main(argv=None):
                         identity = row.pop("id")
                         queue.source_review(identity, **row)
                     result = queue.snapshot()
+                elif args.command == "retry":
+                    source = queue.source(args.source_id)
+                    if source["state"] == "source_rejected":
+                        raise ValueError("Source was rejected for quality; a retry cannot override that decision")
+                    with queue.transaction():
+                        state = "acquired" if source["acquired"] else "discovered"
+                        queue.db.execute("UPDATE sources SET next_attempt=0,state=? WHERE id=?", (state,args.source_id))
+                        queue.event("retry_requested", {"id": args.source_id})
+                    result = {"id": args.source_id, "state": "retry_queued"}
                 elif args.command == "review":
                     for row in read_jsonl(args.manifest):
                         queue.review(row)

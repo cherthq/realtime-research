@@ -55,6 +55,11 @@ media commands share that dataset's existing single-writer lock. Readers can
 inspect SQLite snapshots while collection is running. After a crash, confirm
 the old process is stopped before removing a stale `.pipeline.lock`.
 
+After resolving a failure, use `python -m data_fetching.discovery retry SOURCE_ID`
+to clear its backoff. The same command requests a new screening revision after
+an algorithm change; compatible completed checkpoints are reused. Quality-rejected
+sources cannot be reintroduced by retrying them.
+
 Run budgets are cumulative across invocations, with conservative per-source
 duration/space preflight checks and a download-byte hook. Failed sources record
 errors and retry backoff. Unknown-duration/live streams are refused. No cloud

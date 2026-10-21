@@ -12,7 +12,7 @@ from pathlib import Path
 import sqlite3
 import time
 
-from .core import file_hash, fingerprint, read_jsonl, write_json, write_jsonl, youtube_url
+from .core import file_hash, fingerprint, write_json, write_jsonl, youtube_url
 
 
 def number(value, name):
@@ -283,8 +283,13 @@ class Queue:
         rejections = {}
         for r in self.db.execute("SELECT notes FROM intervals WHERE quality='rejected'"):
             rejections[r[0]] = rejections.get(r[0], 0) + 1
-        for r in self.db.execute("SELECT payload FROM events WHERE kind='source_quality_rejection'"):
-            reason = json.loads(r[0])["reason"]
+        latest_rejections = {}
+        for r in self.db.execute("SELECT payload FROM events WHERE kind='source_quality_rejection' ORDER BY id"):
+            item = json.loads(r[0])
+            latest_rejections[item["id"]] = item["reason"]
+        for identity, reason in latest_rejections.items():
+            if self.source(identity)["state"] != "source_rejected":
+                continue
             rejections[reason] = rejections.get(reason, 0) + 1
         issues = {}
         for r in self.db.execute("SELECT issues FROM intervals"):

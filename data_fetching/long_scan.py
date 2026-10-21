@@ -12,7 +12,6 @@ import subprocess
 import tempfile
 
 from .core import Config, assess_samples, file_hash, fingerprint, read_json, write_json
-from .pipeline import code_fingerprint
 from .vision import Detector, model_paths, runtime_versions, scene_intervals
 
 
@@ -39,7 +38,8 @@ def clean_runs(samples, start, end, sample_fps, framing, minimum=5):
                 result.append({"start": opened, "end": stop, "framing": framing,
                   "method": "sampled_video_geometry_only",
                   "issues": ["overlays_unverified", "compression_filters_unverified",
-                             "speech_and_speaker_match_unverified", "full_interval_uninspected"]})
+                             "speech_and_speaker_match_unverified", "full_interval_uninspected",
+                             "sampled_boundary_timing_unverified", "stable_framing_unverified"]})
             opened = None
         last = sample["time"]
     if opened is not None and last is not None:
@@ -48,7 +48,8 @@ def clean_runs(samples, start, end, sample_fps, framing, minimum=5):
             result.append({"start": opened, "end": stop, "framing": framing,
               "method": "sampled_video_geometry_only",
               "issues": ["overlays_unverified", "compression_filters_unverified",
-                         "speech_and_speaker_match_unverified", "full_interval_uninspected"]})
+                         "speech_and_speaker_match_unverified", "full_interval_uninspected",
+                         "sampled_boundary_timing_unverified", "stable_framing_unverified"]})
     return result
 
 
