@@ -111,7 +111,7 @@ def validate_source(root, source, record):
     return path
 
 
-def fetch_one(root, source):
+def fetch_one(root, source, *, max_bytes=None):
     record_path = source_record_path(root, source)
     if record_path.exists():
         record = read_json(record_path)
@@ -142,6 +142,14 @@ def fetch_one(root, source):
                    "retries": 5, "fragment_retries": 5, "concurrent_fragment_downloads": 2,
                    "socket_timeout": 30, "cachedir": False, "quiet": False,
                    "writeinfojson": True}
+        if max_bytes is not None:
+            transferred = {}
+            def enforce_budget(status):
+                filename = status.get("filename", "unknown")
+                transferred[filename] = status.get("downloaded_bytes", 0)
+                if sum(transferred.values()) > max_bytes:
+                    raise ValueError("Transfer budget exhausted; partial download retained")
+            options.update(max_filesize=max_bytes, progress_hooks=[enforce_budget])
         # Python API does not read CLI config. Explicitly enable an installed
         # supported runtime instead of requiring a new global Deno installation.
         if shutil.which("deno"):
@@ -318,7 +326,7 @@ def review_template(root):
 
 def build_export(root, reviews_path):
     candidates = {row["id"]: row for row in candidate_records(root)}
-    seen, groups, output, approved_intervals = set(), {}, [], set()
+    seen, groups, output, approved_intervals = set(), {}, [], {}
     for review in read_jsonl(reviews_path):
         clip_id = review.get("id")
         if not isinstance(clip_id, str) or clip_id in seen or clip_id not in candidates:
@@ -353,10 +361,11 @@ def build_export(root, reviews_path):
             if group in groups and groups[group] != split:
                 raise ValueError(f"Cross-split leakage: {field}={value}")
             groups[group] = split
-        interval_key = (record["source"]["sha256"], record["start"], record["end"])
-        if interval_key in approved_intervals:
-            raise ValueError(f"{clip_id}: duplicate source interval from another processing revision")
-        approved_intervals.add(interval_key)
+        original_key = record["source"]["sha256"]
+        for start, end in approved_intervals.get(original_key, []):
+            if record["start"] < end and record["end"] > start:
+                raise ValueError(f"{clip_id}: duplicate source interval or overlapping processing revision")
+        approved_intervals.setdefault(original_key, []).append((record["start"], record["end"]))
         validate_candidate(root, record)
         definition = record["source"]["definition"]
         row = {"id": clip_id, "split": split, "source": definition["url"] or definition["path"],
