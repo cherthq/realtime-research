@@ -7,6 +7,9 @@ account for that. No model is assumed to support LoRA training out of the box.
 
 ## Dataset contract
 
+See [the data fetching plan](data-fetching-plan.md) for the proposed 4:3
+landscape, torso-preserving collection and review pipeline.
+
 Use JSONL manifests under `data/` with one sample per line. Required fields:
 `id`, `reference_image`, `audio`, `video`, `split`, `source`, `license`.
 Paths are relative to the dataset root. `split` is `train`, `val` or `test`.

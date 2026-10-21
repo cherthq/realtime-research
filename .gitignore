@@ -1,4 +1,5 @@
 vendor/
+# Local datasets, pilot originals/previews/clips, and detector weights.
 data/
 checkpoints/
 runs/
@@ -16,3 +17,5 @@ __pycache__/
 *.pth
 *.ckpt
 *.log
+# The public pilot bundle is media + Markdown/JSON only; keep galleries local.
+data_fetching/pilot_samples/*.html
