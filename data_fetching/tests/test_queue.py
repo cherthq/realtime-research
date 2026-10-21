@@ -163,7 +163,7 @@ class QueueTests(unittest.TestCase):
                     for i in range(int((end-start)*2))]
         with patch('data_fetching.long_scan.model_paths',return_value=({},{})), \
              patch('data_fetching.long_scan.runtime_versions',return_value={}), \
-             patch('data_fetching.long_scan.scene_intervals',return_value=[(0,500)]), \
+             patch('data_fetching.long_scan.scene_intervals',return_value=[(0,499.98),(499.98,500)]), \
              patch('data_fetching.long_scan.Detector'), \
              patch('data_fetching.long_scan.sample_window',side_effect=sample):
             with patch('data_fetching.long_scan.time.monotonic',side_effect=[0,10,20]):
@@ -173,7 +173,7 @@ class QueueTests(unittest.TestCase):
             with patch('data_fetching.long_scan.time.monotonic',return_value=0):
                 result=scan_source(self.queue,self.queue.source(source),deadline=15)
             self.assertEqual(result['state'],'screened')
-            self.assertEqual(called,[(0,120),(120,240),(240,360),(360,480),(480,500)])
+            self.assertEqual(called,[(0,120),(120,240),(240,360),(360,480),(480,499.98)])
         interval=self.queue.db.execute('SELECT * FROM intervals').fetchone()
         self.assertGreater(interval['end']-interval['start'],300)
         self.assertEqual(interval['quality'],'pending')

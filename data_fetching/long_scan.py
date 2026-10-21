@@ -137,6 +137,14 @@ def scan_source(queue, source, *, deadline, window_seconds=120):
                 completed = read_json(final_path)
                 queue.complete_window(source["id"], revision, scene_start, scene_end, completed["candidates"])
                 continue
+            # A sub-sample scene (often the final container/frame-duration
+            # remainder) may emit no frame through FFmpeg's fps filter. It
+            # cannot support a candidate; retain empty coverage without claiming
+            # that it was visually inspected or retrying it forever.
+            if scene_end - scene_start < 1 / config.sample_fps:
+                write_json(final_path, {"candidates": [], "reason": "scene_shorter_than_sample_period"})
+                queue.complete_window(source["id"], revision, scene_start, scene_end, [])
+                continue
             samples = []
             cursor = scene_start
             while cursor < scene_end - 1e-6:
