@@ -29,7 +29,7 @@ def publication_manifest(queue):
         files.append((original, remote, source["sha256"]))
         intervals = []
         for r in queue.db.execute("SELECT * FROM intervals WHERE source_id=? ORDER BY start", (source["id"],)):
-            intervals.append({k: r[k] for k in ("id", "start", "end", "framing", "method", "quality", "inspection", "speaker_id", "conversation_id", "split")}
+            intervals.append({k: r[k] for k in ("id", "revision", "start", "end", "framing", "method", "quality", "inspection", "speaker_id", "conversation_id", "split")}
                             | {"issues": json.loads(r["issues"])})
         records.append({"id": source["id"], "source_url": metadata.get("source_page", source["url"]),
           "original_uploader": metadata.get("uploader"), "title": metadata.get("title"),
@@ -41,6 +41,7 @@ def publication_manifest(queue):
           "redistribution_status": source["redistribution_status"],
           "training_permission_status": source["permission_status"],
           "curation_state": source["state"], "source_screening_rejections": rejections,
+          "sampled_quality_observations": metadata.get("sampled_quality_observations"),
           "duplicate_status": source["duplicate_status"], "canonical_recording": source["canonical"],
           "timeline_offset_seconds": source["offset"], "original_sha256": source["sha256"],
           "original_path": remote, "duration_seconds": json.loads(source["media"])["duration"],
