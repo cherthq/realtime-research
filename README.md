@@ -25,6 +25,8 @@ reset or automatically updated. Model downloads and installs are explicit.
 - `scripts/workspace.py`: list models, fetch pinned sources, check prerequisites.
 - `data_fetching/`: review-first 4:3 torso-clip fetching/preprocessing, CLI and tests;
   see [setup and staged usage](data_fetching/README.md). No collection runs on import.
+  The opt-in [persistent discovery queue](data_fetching/QUEUE.md) retains long
+  intervals and supports reviewed provenance plus Hugging Face storage.
 - `docs/experiments.md`: baseline protocol and data/experiment conventions.
 - `infra/lambda.md`: GPU host setup and environment boundaries.
 - `infra/ssh_config.example`: SSH template; keep your key outside this repository.

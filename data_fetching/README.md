@@ -10,8 +10,14 @@ without needing downloads or the local HTML gallery. Only this curated media
 bundle is included in Git; full source recordings and other outputs stay ignored.
 
 See [the discovery/scheduler handoff](DISCOVERY.md) for the 200-300 usable-hour
-collection target and longer-segment approach. This is documentation, not an
-implemented discovery service; the 15-second smoke-test default is unchanged.
+collection target and longer-segment approach. The handoff describes collection
+requirements; the 15-second smoke-test default is unchanged.
+
+The [persistent queue extension](QUEUE.md) now supplies metadata search,
+checkpointed whole-recording screening, canonical timeline accounting and
+explicit Hugging Face publication. It is opt-in through
+`python -m data_fetching.discovery`; recurring collection is not enabled by
+installing or importing it. Existing smoke-test processing defaults are unchanged.
 
 **Collection is explicit; inspect the code and inputs before starting a run.** Nothing
 downloads just by importing this package, displaying help, or doing a dry run.

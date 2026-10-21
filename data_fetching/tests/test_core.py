@@ -49,7 +49,7 @@ class CoreTests(unittest.TestCase):
             write_jsonl(manifest, [row, row])
             loaded = load_sources(manifest)
             self.assertEqual(len(loaded), 1)
-            self.assertEqual(loaded[0].path, str(Path(temp) / "x.mp4"))
+            self.assertEqual(loaded[0].path, str((Path(temp) / "x.mp4").resolve()))
             write_jsonl(manifest, [row, {"id": "a", "path": "y.mp4"}])
             with self.assertRaises(ValueError):
                 load_sources(manifest)
@@ -59,7 +59,7 @@ class CoreTests(unittest.TestCase):
 
     def test_contained_paths(self):
         with tempfile.TemporaryDirectory() as temp:
-            self.assertEqual(within(Path(temp), "clips/a.mp4"), Path(temp) / "clips/a.mp4")
+            self.assertEqual(within(Path(temp), "clips/a.mp4"), Path(temp).resolve() / "clips/a.mp4")
             with self.assertRaises(ValueError):
                 within(Path(temp), "../escape")
 

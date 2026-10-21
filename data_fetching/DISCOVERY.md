@@ -1,5 +1,10 @@
 # Long-footage discovery handoff
 
+Implementation update: see [QUEUE.md](QUEUE.md) for the opt-in persistent queue,
+sampled long-interval screening, deduplicated accounting, and Hugging Face
+storage. This handoff remains the collection specification. No schedule is
+installed automatically; full quality and source-permission review remain gates.
+
 The collection target is 200-300 hours of **usable, unique, reviewed footage**,
 not 200-300 downloaded hours. This is a collection target, not an established
 minimum training requirement. Measure rejection rates on a small batch before
@@ -64,8 +69,10 @@ the previous run. Never invent inspection results, permissions or approvals.
 
 ## Implementation boundary
 
-This document is a handoff prompt, not a running scheduler or link collector.
+This document is a handoff prompt; the opt-in queue implementation is described
+in QUEUE.md and does not run a scheduler on its own.
 Discovery records must be reviewed and converted to the source schema in the
 parent README before invoking `fetch`. Automatic OCR, watermark detection,
-active-speaker scoring, perceptual deduplication and full artifact quality gates
-are not implemented in the current foundation.
+active-speaker scoring and full artifact quality gates are not implemented.
+The queue adds perceptual duplicate proposals and canonical timeline mappings,
+but unresolved matches require review and are excluded from confirmed totals.

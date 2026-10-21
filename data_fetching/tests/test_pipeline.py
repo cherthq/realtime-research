@@ -190,6 +190,15 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate source interval"):
             build_export(self.root, reviews)
 
+    def test_partially_overlapping_revision_not_exported_twice(self):
+        record = self.candidate()
+        duplicate = {**record, "id": record["id"] + "_overlap", "start": 5, "end": 15}
+        write_json(self.root / "clips" / duplicate["id"] / "candidate.json", duplicate)
+        reviews = self.base / "reviews.jsonl"
+        write_jsonl(reviews, [self.approved_review(record), self.approved_review(duplicate)])
+        with self.assertRaisesRegex(ValueError, "overlapping"):
+            build_export(self.root, reviews)
+
     def test_output_never_overwrites_reviews(self):
         path = self.base / "reviews.jsonl"
         write_new(path, [{"status": "approved"}])
