@@ -1,0 +1,6 @@
+# Separate Python 3.11 environment; never install into a model environment.
+mediapipe==0.10.21
+numpy==1.26.4
+opencv-contrib-python==4.11.0.86
+scenedetect==0.6.7.1
+yt-dlp[default]==2026.8.19

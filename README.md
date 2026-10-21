@@ -23,6 +23,8 @@ reset or automatically updated. Model downloads and installs are explicit.
 
 - `configs/models.json`: source commits, weight locations, upstream setup links.
 - `scripts/workspace.py`: list models, fetch pinned sources, check prerequisites.
+- `data_fetching/`: review-first 4:3 torso-clip fetching/preprocessing, CLI and tests;
+  see [setup and staged usage](data_fetching/README.md). No collection runs on import.
 - `docs/experiments.md`: baseline protocol and data/experiment conventions.
 - `infra/lambda.md`: GPU host setup and environment boundaries.
 - `infra/ssh_config.example`: SSH template; keep your key outside this repository.
