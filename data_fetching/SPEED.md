@@ -66,10 +66,11 @@ Worker check objects matched exactly across both requests and both modes.
 These are worker/stage timings, not a claim of 5–15x end-to-end speedup. Real
 GPU throughput and multi-source resource scaling have not been measured here.
 
-## Gary's runner
+## Runner configuration
 
 Use the Python 3.11 environments, verified assets and storage setup in
-[RUNNER.md](RUNNER.md). The main detector defaults to CPU for compatibility.
+[README.md](README.md) and [worker guide](docs/workers.md). The main detector
+defaults to CPU for compatibility.
 For supported Linux GPU runtimes, explicitly request the MediaPipe GPU delegate:
 
 ```bash
@@ -105,10 +106,10 @@ against one dataset root; the parent keeps its dataset lock across parallel jobs
 Raise it deliberately for longer recordings and inspect `unscanned_tail_seconds`
 and `candidate_limit_reached`. `--max-clips 1000` is an explicit budget, not a
 guarantee that a source is fully exhausted. Raise `--limit` for larger manifests.
-The core CLI is not a persistent collection scheduler or the local 20-source
-experiment runner. Downloading still preserves full originals once for reuse;
+The core CLI is not a persistent collection scheduler. Downloading still
+preserves full originals once for reuse;
 parallel processing does not add aggressive YouTube download concurrency.
 
 Re-running unchanged inputs validates/reuses caches. Code, model, config and
-registry changes may require reprocessing and a new review. Preserve old outputs;
-the old local experiment driver intentionally refuses changed code fingerprints.
+registry changes may require reprocessing and a new review. Preserve old outputs
+and account for revisions when measuring unique footage.

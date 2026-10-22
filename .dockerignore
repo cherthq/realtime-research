@@ -4,4 +4,10 @@
 !data_fetching/**
 data_fetching/**/__pycache__/
 data_fetching/**/*.pyc
-data_fetching/pilot_samples/
+data_fetching/**/*.mp4
+data_fetching/**/*.mkv
+data_fetching/**/*.mov
+data_fetching/**/*.webm
+data_fetching/**/*.avi
+data_fetching/**/*.wav
+data_fetching/**/*.flac

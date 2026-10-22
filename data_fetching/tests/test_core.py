@@ -1,6 +1,8 @@
 from pathlib import Path
+import re
 import tempfile
 import unittest
+from urllib.parse import unquote, urlsplit
 
 from data_fetching.core import (Config, Source, assess_samples, fit_crop, intervals,
                                 load_sources, within, write_jsonl, youtube_url)
@@ -130,6 +132,42 @@ class CoreTests(unittest.TestCase):
             path.write_text("abcdefghijk_0000,720,1280,0,100,1,2,3,4\n", encoding="utf-8")
             with self.assertRaises(ValueError):
                 import_talkinghead(path, "train", 5)
+
+
+class PublicDocumentationTests(unittest.TestCase):
+    @staticmethod
+    def documents():
+        root = Path(__file__).resolve().parents[2]
+        return root, [root / "README.md", root / "data_fetching/README.md",
+                      root / "data_fetching/SPEED.md",
+                      *(root / "data_fetching/docs").rglob("*.md"),
+                      *(root / "docs").rglob("*.md"), *(root / "infra").rglob("*.md")]
+
+    def test_public_documentation_links_resolve(self):
+        root, documents = self.documents()
+        for document in documents:
+            content = document.read_text(encoding="utf-8")
+            for target in re.findall(r"\[[^\]]*\]\(([^)]+)\)", content):
+                target = target.strip("<>")
+                parsed = urlsplit(target)
+                if parsed.scheme or not parsed.path:
+                    continue
+                path = (document.parent / unquote(parsed.path)).resolve()
+                with self.subTest(document=str(document.relative_to(root)), target=target):
+                    self.assertTrue(path.exists(), f"Broken local documentation link: {target}")
+
+    def test_public_documentation_is_portable(self):
+        root, documents = self.documents()
+        workstation_path = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/]|/mnt/[a-z]/|/Users/")
+        self.assertIsNone(workstation_path.search("https://example.com/project"))
+        self.assertIsNotNone(workstation_path.search("Z:/personal/project"))
+        retired = ("RUNNER.md", "RELIABILITY.md", "VALIDATION.md", "DISCOVERY.md",
+                   "data-fetching-plan.md", "reproduce_pilot", "pilot_samples/", "pilot_sources.jsonl")
+        for document in documents:
+            content = document.read_text(encoding="utf-8")
+            with self.subTest(document=str(document.relative_to(root))):
+                self.assertIsNone(workstation_path.search(content))
+                self.assertFalse(any(name in content for name in retired))
 
 
 if __name__ == "__main__":

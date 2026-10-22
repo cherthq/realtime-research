@@ -1,17 +1,17 @@
 # Lambda / WSL setup
 
-Use Linux for model execution. Locally: WSL Ubuntu, `/mnt/d/realtime-research`.
-On Lambda: clone this workspace into `~/realtime-research`, with model sources,
+Use Linux for model execution, either directly or through a compatible WSL setup.
+On a remote host, clone the repository, with model sources,
 data and weights on a persistent volume when available. This foundation does not
 provision or bill cloud resources.
 
 1. Add the host/key using `ssh_config.example`, then `ssh chert-lambda`.
 2. Install Git and FFmpeg on the GPU host if absent.
-3. Transfer the current workspace (including uncommitted foundation files):
+3. Clone the repository on the host:
 
    ```bash
-   # Run in WSL, with rsync installed and the SSH host configured in WSL.
-   rsync -av --exclude=.git --exclude=vendor --exclude=data --exclude=checkpoints --exclude=runs --exclude='.env*' --exclude='*.pem' --exclude='*.key' /mnt/d/realtime-research/ chert-lambda:~/realtime-research/
+   git clone https://github.com/cherthq/realtime-research.git
+   cd realtime-research
    ```
 
 4. Run `python3 scripts/workspace.py sources all` on the host.
