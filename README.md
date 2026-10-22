@@ -1,52 +1,91 @@
 # Chert realtime avatar research
 
-Minimal workspace for comparing image + audio driven avatar models, selecting a
-quality baseline, then investigating fine-tuning and distillation.
+Research tooling for image-and-audio-driven avatar models and review-first
+preparation of talking-person video data.
 
-## Start here
+The repository contains two independent workflows:
 
-Local checkout: `D:\realtime-research` (WSL: `/mnt/d/realtime-research`).
-The orchestration script uses only Python's standard library (Python 3.10+).
+- **Data preparation:** extract fixed 4:3 upper-body clips, preserve audio timing,
+  record quality evidence, review candidates and export approved samples.
+- **Model research:** inspect and retrieve pinned upstream avatar-model sources
+  for baseline comparisons, fine-tuning feasibility and distillation research.
+
+No collection, checkpoint download, training or deployment starts automatically.
+Datasets, model weights, generated media, credentials and private reviews are not
+included in the checkout.
+
+## Get started
+
+```bash
+git clone https://github.com/cherthq/realtime-research.git
+cd realtime-research
+```
+
+For data preparation, follow the [data pipeline README](data_fetching/README.md).
+It documents Python 3.11 setup, source manifests, processing limits, review and
+export. See [performance and GPU setup](data_fetching/SPEED.md) before processing
+long recordings or increasing concurrency.
+
+For the model workspace, Python 3.10+ is sufficient for the standard-library
+orchestration script:
 
 ```bash
 python scripts/workspace.py list
 python scripts/workspace.py sources all --dry-run
-python scripts/workspace.py sources all
 python scripts/workspace.py doctor
 ```
 
-`sources` clones official upstream repositories into ignored `vendor/` directories
-at the commits in `configs/models.json`. Existing checkouts are verified, never
-reset or automatically updated. Model downloads and installs are explicit.
+To explicitly retrieve registered upstream sources:
 
-## Layout
+```bash
+python scripts/workspace.py sources all
+```
 
-- `configs/models.json`: source commits, weight locations, upstream setup links.
-- `scripts/workspace.py`: list models, fetch pinned sources, check prerequisites.
-- `data_fetching/`: review-first 4:3 torso-clip fetching/preprocessing, CLI and tests;
-  see [setup and staged usage](data_fetching/README.md). No collection runs on import.
-- `docs/experiments.md`: baseline protocol and data/experiment conventions.
-- `infra/lambda.md`: GPU host setup and environment boundaries.
-- `infra/ssh_config.example`: SSH template; keep your key outside this repository.
-- `vendor/`, `data/`, `checkpoints/`, `runs/`: local artifacts, excluded from Git.
+Sources are cloned into ignored `vendor/` directories at revisions recorded in
+`configs/models.json`. Existing checkouts are verified, not reset or silently
+updated. Checkpoint downloads and environment installation are separate steps.
 
-## Model set
+## Repository layout
 
-| ID | Model | Initial purpose |
-| --- | --- | --- |
-| `liveavatar` | Live Avatar (14B family) | Distilled streaming baseline |
-| `flashtalk` | SoulX-FlashTalk-14B | Distilled streaming/gesture comparison |
-| `hunyuan_avatar` | HunyuanVideo-Avatar (~13B backbone) | Offline quality comparison |
+| Location | Purpose |
+| --- | --- |
+| `data_fetching/` | Preprocessing CLI, quality checks, examples and tests |
+| `configs/models.json` | Registered model sources, revisions and weight references |
+| `scripts/workspace.py` | Model workspace inspection and source retrieval |
+| `docs/experiments.md` | Experiment protocol and dataset conventions |
+| `infra/` | Remote-host setup and SSH configuration template |
 
-These are avatar renderers: voice understanding, dialogue, TTS and interruption
-handling belong to the later conversation pipeline. Open weights do not imply
-released training code. Verify training support and checkpoint compatibility
-before scheduling fine-tuning. Live Avatar and FlashTalk are already distilled;
-fine-tuning them may require retaining their few-step/streaming objectives.
-Hunyuan has its own community license; do not assume Apache terms for all models.
+Generated artifacts belong in ignored `data/`, `checkpoints/`, `runs/` and
+`vendor/` directories, or on an explicitly configured external storage volume.
+Keep private keys and service credentials outside tracked files.
 
-Keep one Python/CUDA environment per upstream repository. Follow its pinned
-README for installation; there is deliberately no combined ML requirements file.
-Local 4 GB VRAM is for orchestration checks. GPU inference runs on Lambda.
+## Registered model baselines
 
-See [Lambda setup](infra/lambda.md) and [experiment protocol](docs/experiments.md).
+| Model ID | Model |
+| --- | --- |
+| `liveavatar` | Live Avatar |
+| `flashtalk` | SoulX-FlashTalk-14B |
+| `hunyuan_avatar` | HunyuanVideo-Avatar |
+
+Registration does not establish training support, checkpoint compatibility or
+hardware capacity. Use a separate environment for each upstream project and
+follow its pinned documentation. These models render avatars; speech recognition,
+dialogue, voice generation and interruption handling are separate components.
+
+See the [experiment protocol](docs/experiments.md) and
+[remote-host guide](infra/lambda.md) for the model research workflow.
+
+## Validation and responsible use
+
+```bash
+python -m unittest discover -s data_fetching/tests -v
+```
+
+Install the data pipeline prerequisites first. Tests use synthetic local media
+or mocks, with optional dependency checks; they do not download recordings or
+model weights. See the pipeline README for the tested scope and limitations.
+
+Preprocessing produces candidates, not automatic training approval. Source
+permission, quality review and redistribution approval are separate decisions.
+Upstream code, checkpoint and source-media terms must be checked independently;
+inclusion in a source list does not grant permission for an intended use.

@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "backends": {
+    "vad": {
+      "enabled": false,
+      "python": "../../../.venv-qc-vad/bin/python",
+      "weights": "../models/silero_vad.onnx",
+      "assets": [{"path": "../models/silero_vad.onnx", "sha256": "REPLACE_WITH_VERIFIED_SHA256"}],
+      "terms_reviewed": false,
+      "license_evidence": "",
+      "timeout_seconds": 1800
+    },
+    "talknet": {
+      "enabled": false,
+      "python": "../../../.venv-qc-audio/bin/python",
+      "repo": "../../../vendor/TalkNet-ASD",
+      "revision": "6d6821479af485e251c4991487e40573b42181b4",
+      "weights": "../models/pretrain_TalkSet.model",
+      "assets": [{"path": "../models/pretrain_TalkSet.model", "sha256": "REPLACE_WITH_VERIFIED_SHA256"}],
+      "device": "cpu",
+      "terms_reviewed": false,
+      "license_evidence": "",
+      "score_validated": false,
+      "calibration_evidence": null,
+      "timeout_seconds": 1800
+    },
+    "syncnet": {
+      "enabled": false,
+      "python": "../../../.venv-qc-audio/bin/python",
+      "repo": "../../../vendor/syncnet_python",
+      "revision": "907c0b579c2e2d83f0eae1b2ac9e720cde4e5623",
+      "weights": "../models/syncnet.model",
+      "assets": [{"path": "../models/syncnet.model", "sha256": "REPLACE_WITH_VERIFIED_SHA256"}],
+      "device": "cpu",
+      "terms_reviewed": false,
+      "license_evidence": "",
+      "sync_sign_validated": false,
+      "calibration_evidence": null,
+      "timeout_seconds": 1800
+    },
+    "ocr": {
+      "enabled": false,
+      "python": "../../../.venv-qc-ocr/bin/python",
+      "model_name": "PP-OCRv5_mobile_det",
+      "model_dir": "../models/PP-OCRv5_mobile_det",
+      "assets": [],
+      "device": "cpu",
+      "terms_reviewed": false,
+      "license_evidence": "",
+      "timeout_seconds": 1800
+    }
+  }
+}

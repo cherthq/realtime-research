@@ -1,0 +1,24 @@
+name: Data pipeline checks
+on:
+  push:
+    paths: ['data_fetching/**', '.github/workflows/data-fetching.yml']
+  pull_request:
+    paths: ['data_fetching/**', '.github/workflows/data-fetching.yml']
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: 'data_fetching/requirements*.txt'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: python -m pip install -r data_fetching/requirements-quality.txt ruff==0.14.1
+      - run: ruff check data_fetching --select E9,F
+      - run: python -m unittest discover -s data_fetching/tests -v
+      - run: python -m pip check

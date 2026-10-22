@@ -92,16 +92,28 @@ def render_clip(path, directory, start, end, crop, config, info):
     directory.mkdir(parents=True, exist_ok=True)
     absolute_start, absolute_end = info["video_start"] + start, info["video_start"] + end
     duration = end - start
+    # Video seeks with preroll; audio retains its original decode history below.
+    seek_start = max(info["video_start"], absolute_start - 2.0)
     vf = (f"[0:{info['video_index']}]trim=start={absolute_start:.9f}:end={absolute_end:.9f},"
           f"setpts=PTS-({absolute_start:.9f})/TB,crop={width}:{height}:{x}:{y},"
           f"scale={config.width}:{config.height}:flags=lanczos,setsar=1[v]")
-    af = (f"[0:{info['audio_index']}]atrim=start={absolute_start:.9f}:end={absolute_end:.9f},"
+    # Keep audio on a separate, unseeked input. Seeking AAC in coarse-timebase
+    # containers can change the decoder's sample-clock phase (even with preroll).
+    # Decoding the audio prefix is cheap compared with decoding the video prefix,
+    # and preserves the original waveform and intentional A/V delay exactly.
+    af = (f"[1:{info['audio_index']}]atrim=start={absolute_start:.9f}:end={absolute_end:.9f},"
           f"asetpts=PTS-({absolute_start:.9f})/TB,aresample=48000:async=1:first_pts=0,"
           f"apad,atrim=duration={duration:.9f}[a]")
     video = directory / "video.mp4"
     temporary = directory / "video.partial.mp4"
     run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-copyts",
-         "-i", path, "-filter_complex", vf + ";" + af, "-map", "[v]", "-map", "[a]",
+         # Seek the demuxer first; filters still trim exact absolute timestamps.
+         # Without this, each late candidate decodes the entire source prefix.
+         # Keep keyframe preroll: accurate_seek can discard extra video on
+         # non-zero-origin inputs when combined with copyts. The filters, not
+         # FFmpeg's pre-filter discard, establish the exact A/V boundary.
+         "-seek_timestamp", "1", "-ss", f"{seek_start:.9f}", "-noaccurate_seek",
+         "-i", path, "-i", path, "-filter_complex", vf + ";" + af, "-map", "[v]", "-map", "[a]",
          "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
          "-fps_mode", "passthrough", "-c:a", "aac", "-ar", "48000", "-ac", "1",
          "-t", f"{duration:.9f}", "-movflags", "+faststart", temporary])

@@ -1,5 +1,5 @@
 vendor/
-# Local datasets, pilot originals/previews/clips, and detector weights.
+# Local datasets, generated media, and detector weights.
 data/
 checkpoints/
 runs/
@@ -16,6 +16,17 @@ __pycache__/
 *.pt
 *.pth
 *.ckpt
+*.onnx
+*.tflite
+*.task
+*.pdiparams
 *.log
-# The public pilot bundle is media + Markdown/JSON only; keep galleries local.
-data_fetching/pilot_samples/*.html
+# Do not reintroduce retired demo bundles or generated media into source.
+data_fetching/pilot_samples/
+*.mp4
+*.mkv
+*.mov
+*.webm
+*.avi
+*.wav
+*.flac

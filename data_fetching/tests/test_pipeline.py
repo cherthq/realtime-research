@@ -196,6 +196,25 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             write_new(path, [{"status": "pending"}])
 
+    def test_overlapping_approved_intervals_rejected(self):
+        record = self.candidate()
+        duplicate = {**record, "id": record["id"] + "_overlap", "start": 1}
+        write_json(self.root / "clips" / duplicate["id"] / "candidate.json", duplicate)
+        reviews = self.base / "reviews.jsonl"
+        write_jsonl(reviews, [self.approved_review(record), self.approved_review(duplicate)])
+        with self.assertRaisesRegex(ValueError, "overlapping"):
+            build_export(self.root, reviews)
+
+    def test_reviewed_reupload_group_uses_one_canonical_recording(self):
+        record = self.candidate()
+        duplicate = {**record, "id": record["id"] + "_reupload", "source": {**record["source"], "sha256": "other-original"}}
+        write_json(self.root / "clips" / duplicate["id"] / "candidate.json", duplicate)
+        reviews = self.base / "reviews.jsonl"
+        write_jsonl(reviews, [{**self.approved_review(record), "duplicate_content_group": "reviewed-match"},
+                             {**self.approved_review(duplicate), "duplicate_content_group": "reviewed-match"}])
+        with self.assertRaisesRegex(ValueError, "canonical"):
+            build_export(self.root, reviews)
+
 
 if __name__ == "__main__":
     unittest.main()

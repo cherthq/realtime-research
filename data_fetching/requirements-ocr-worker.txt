@@ -1,0 +1,7 @@
+# Separate Python 3.11 env. Do not install into the MediaPipe/audio env.
+# Direct text detector: avoid the full document/LLM pipeline extras in PaddleOCR.
+numpy==1.26.4
+paddlepaddle==3.0.0
+paddlex[ocr]==3.0.3
+pandas==2.2.3
+av==16.1.0

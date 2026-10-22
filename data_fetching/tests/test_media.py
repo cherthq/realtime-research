@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 import wave
 
 from data_fetching.core import Config
@@ -59,6 +60,54 @@ class MediaTests(unittest.TestCase):
             samples = array("h", handle.readframes(4800))
         self.assertGreater(max(abs(x) for x in samples), 1000)
         self.assertTrue(result["reference_image"].is_file())
+
+    def test_input_seek_matches_legacy_trim_with_nonzero_origin(self):
+        self.assert_seek_matches_reference(self.source, self.info, "seek-match")
+
+    def test_input_seek_matches_legacy_trim_with_vfr(self):
+        video = self.root / "vfr.mkv"
+        run(["ffmpeg", "-v", "error", "-nostdin", "-y", "-copyts", "-i", self.source,
+             "-vf", "setpts='PTS+if(gte(N,75),0.08/TB,0)'", "-fps_mode", "vfr",
+             "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "copy", video])
+        self.assert_seek_matches_reference(video, probe(video), "vfr-seek-match")
+
+    def test_late_seek_keeps_aac_sample_phase_in_coarse_container(self):
+        video = self.root / "aac-clock.mkv"
+        run(["ffmpeg", "-v", "error", "-nostdin", "-y",
+             "-f", "lavfi", "-i", "testsrc2=size=1024x768:rate=25:duration=12",
+             "-f", "lavfi", "-i", "sine=frequency=811:sample_rate=44100:duration=12",
+             "-c:v", "libx264", "-preset", "ultrafast", "-g", "25", "-c:a", "aac", video])
+        self.assert_seek_matches_reference(video, probe(video), "aac-seek-match", 8, 11)
+
+    def assert_seek_matches_reference(self, source, info, name, start=0.75, end=5.75):
+        def legacy(command, **kwargs):
+            command = list(command)
+            if "-copyts" in command:
+                for flag in ("-seek_timestamp", "-ss"):
+                    index = command.index(flag)
+                    del command[index:index + 2]
+                command.remove("-noaccurate_seek")
+                # Restore the old single-input graph, not merely a zero seek.
+                first = command.index("-i")
+                del command[first + 2:first + 4]
+                at = command.index("-filter_complex") + 1
+                command[at] = command[at].replace("[1:", "[0:")
+            return run(command, **kwargs)
+        with patch("data_fetching.media.run", wraps=run) as calls:
+            fast = render_clip(source, self.root / name / "fast", start, end,
+                               [0, 0, 1024, 768], Config(), info)
+        command = next(c.args[0] for c in calls.call_args_list if "-copyts" in c.args[0])
+        self.assertLess(command.index("-ss"), command.index("-i"))
+        self.assertEqual(float(command[command.index("-ss") + 1]),
+                         max(info["video_start"], info["video_start"] + start - 2))
+        self.assertIn("-noaccurate_seek", command)
+        with patch("data_fetching.media.run", side_effect=legacy):
+            reference = render_clip(source, self.root / name / "reference", start, end,
+                                    [0, 0, 1024, 768], Config(), info)
+        frame_hashes = lambda path: run(["ffmpeg", "-v", "error", "-i", path,
+                                         "-map", "0:v:0", "-f", "framemd5", "-"])
+        self.assertEqual(frame_hashes(fast["video"]), frame_hashes(reference["video"]))
+        self.assertEqual(fast["audio"].read_bytes(), reference["audio"].read_bytes())
 
     def test_missing_audio_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "missing_audio"):
