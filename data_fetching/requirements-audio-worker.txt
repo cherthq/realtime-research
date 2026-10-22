@@ -1,0 +1,7 @@
+# Separate Python 3.11 worker env. CPU defaults; CUDA wheel selection is explicit.
+numpy==1.26.4
+torch==2.5.1
+scipy==1.13.1
+python-speech-features==0.6
+opencv-python-headless==4.11.0.86
+onnxruntime==1.20.1

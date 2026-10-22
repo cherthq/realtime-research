@@ -1,0 +1,11 @@
+{
+  "framing_profile": "torso",
+  "scene_detector": "content",
+  "width": 768,
+  "height": 576,
+  "min_seconds": 5,
+  "long_seconds": 60,
+  "max_seconds": 300,
+  "tracking_gap": 0.25,
+  "crop_safety": 0.04
+}

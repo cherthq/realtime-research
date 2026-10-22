@@ -66,6 +66,8 @@ the previous run. Never invent inspection results, permissions or approvals.
 
 This document is a handoff prompt, not a running scheduler or link collector.
 Discovery records must be reviewed and converted to the source schema in the
-parent README before invoking `fetch`. Automatic OCR, watermark detection,
-active-speaker scoring, perceptual deduplication and full artifact quality gates
-are not implemented in the current foundation.
+parent README before invoking `fetch`. The opt-in quality-long pipeline now
+provides OCR/VAD adapters, active-speaker/sync adapters, temporal hashes and review
+gates; see [RUNNER.md](RUNNER.md). Missing or unvalidated workers remain unverified.
+Semantic watermark/artifact detection and automatic source/training approval are
+not provided. Source discovery itself is still a handoff, not a deployed service.

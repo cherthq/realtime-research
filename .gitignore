@@ -16,6 +16,10 @@ __pycache__/
 *.pt
 *.pth
 *.ckpt
+*.onnx
+*.tflite
+*.task
+*.pdiparams
 *.log
 # The public pilot bundle is media + Markdown/JSON only; keep galleries local.
 data_fetching/pilot_samples/*.html

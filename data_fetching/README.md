@@ -1,5 +1,24 @@
 # FaceTime-style data fetching
 
+For the new opt-in full-frame quality pipeline and remote-runner setup, see
+[the runner handoff](RUNNER.md). Use `process --profile quality-long` for that
+path; the legacy smoke-test defaults described below are unchanged. The new
+checks still require model provisioning, calibration and human review.
+
+For hour-long recordings, see [throughput and GPU setup](SPEED.md): single-pass
+selection, persistent OCR/VAD workers and bounded source-level parallelism are
+available without reducing final frame coverage. GPU use is explicit and requires
+a supported MediaPipe GPU runtime; it is not automatically enabled by CUDA.
+
+See [local validation results](VALIDATION.md) for the tested scope and remaining
+release gates; a successful replay is not approval to collect hundreds of hours.
+
+The quality-long profile now defaults to a **torso-driven crop**. It preserves
+all face/body detections and association reasons, keeps short detection gaps as
+explicitly uncertain proposals, and verifies source-to-output geometry without
+reapplying torso expansion. See [reliability changes](RELIABILITY.md) for the
+failure policy, benchmark format, optional YuNet adapter and remaining limits.
+
 Review-first tooling for **4:3 landscape, 768 x 576** clips showing a person's
 head, shoulders and upper torso. All code, configuration, examples and tests live
 in this folder. Originals, model artifacts and generated data stay in the ignored

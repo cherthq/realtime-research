@@ -1,0 +1,7 @@
+# Optional, separate Hugging Face packaging verification environment.
+datasets==4.4.1
+# Also compatible if the main preprocessing environment is used for local tests.
+click==8.2.1
+huggingface-hub==0.36.0
+pyarrow==21.0.0
+pandas==2.2.3

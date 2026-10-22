@@ -1,0 +1,7 @@
+# Only preprocessing code is needed in the CPU image; never send datasets/secrets.
+*
+!data_fetching/
+!data_fetching/**
+data_fetching/**/__pycache__/
+data_fetching/**/*.pyc
+data_fetching/pilot_samples/

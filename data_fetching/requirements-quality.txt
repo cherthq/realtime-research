@@ -1,0 +1,3 @@
+# Install into .venv-data after the existing direct requirements.
+-r requirements.txt
+av==16.1.0
