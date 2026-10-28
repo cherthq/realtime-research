@@ -1,0 +1,3 @@
+# Runtime imports must not make a pinned vendor checkout appear source-modified.
+# Keep this narrow: tracked edits and other untracked files still fail checks.
+__pycache__/

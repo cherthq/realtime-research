@@ -1,4 +1,24 @@
 {
+  "avatarforever": {
+    "name": "AvatarForever 22B",
+    "repo": "https://github.com/leeruibin/avatarforever.git",
+    "commit": "de4deb6a55c9567a17dad58d67390fe089993630",
+    "python": "3.11",
+    "readme": "https://github.com/leeruibin/avatarforever/blob/de4deb6a55c9567a17dad58d67390fe089993630/README.md",
+    "weights": ["LetsThink/AvatarForever", "google/gemma-3-12b-it-qat-q4_0-unquantized"],
+    "weight_revision": "622ea82482c09e7fb2d8e29cb7ff1d009c820f05",
+    "weight_file": "avatarforever-ltx-2.3-22b.safetensors",
+    "notes": "Experimental direct 640x480 incremental adapter verified on one H100 80GB with released weights and real voice/WebRTC calls. See realtime/QUALIFICATION.md for measured limits; sustained realtime and physical playback qualification are separate. Gemma auxiliary weights require upstream access."
+  },
+  "liveact": {
+    "name": "SoulX-LiveAct",
+    "repo": "https://github.com/Soul-AILab/SoulX-LiveAct.git",
+    "commit": "ac8579b907756f228e975922a5159765c93c6a34",
+    "python": "3.10",
+    "readme": "https://github.com/Soul-AILab/SoulX-LiveAct/blob/ac8579b907756f228e975922a5159765c93c6a34/README.md",
+    "weights": ["Soul-AILab/LiveAct", "TencentGameMate/chinese-wav2vec2-base"],
+    "notes": "Image/audio-driven baseline. Published realtime path uses two H100/H200 GPUs; single-GPU evaluation is separate. Training code pending."
+  },
   "liveavatar": {
     "name": "Live Avatar",
     "repo": "https://github.com/Alibaba-Quark/LiveAvatar.git",

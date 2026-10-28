@@ -1,0 +1,9 @@
+{
+  "profile_id": "facetime-4x3-v1",
+  "width": 640,
+  "height": 480,
+  "generation": "direct_at_target_dimensions",
+  "post_generation_resize": false,
+  "framing": "preserve_4x3_upper_body_reference",
+  "fps_policy": "retain_each_models_native_fps"
+}
