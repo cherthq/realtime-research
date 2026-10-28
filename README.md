@@ -3,18 +3,24 @@
 Research tooling for image-and-audio-driven avatar models and review-first
 preparation of talking-person video data.
 
-The repository contains two independent workflows:
+The repository contains three workflows:
 
 - **Data preparation:** extract fixed 4:3 upper-body clips, preserve audio timing,
   record quality evidence, review candidates and export approved samples.
 - **Model research:** inspect and retrieve pinned upstream avatar-model sources
   for baseline comparisons, fine-tuning feasibility and distillation research.
+- **Interactive demo:** a two-panel browser call with OpenAI voice and a persistent
+  AvatarForever GPU worker, connected through self-hosted LiveKit over SSH.
 
 No collection, checkpoint download, training or deployment starts automatically.
 Datasets, model weights, generated media, credentials and private reviews are not
 included in the checkout.
 
 ## Get started
+
+To recreate the interactive demo on a new machine, start with
+**[Recreate the demo](docs/recreate-demo.md)**. It covers the separate media pack,
+GPU setup, credentials, voice preparation, SSH, verification and shutdown.
 
 ```bash
 git clone https://github.com/cherthq/realtime-research.git
@@ -52,8 +58,11 @@ updated. Checkpoint downloads and environment installation are separate steps.
 | `data_fetching/` | Preprocessing CLI, quality checks, examples and tests |
 | `configs/models.json` | Registered model sources, revisions and weight references |
 | `scripts/workspace.py` | Model workspace inspection and source retrieval |
+| `docs/running-baselines.md` | Explicit GPU setup, file-input runs and result boundaries |
 | `docs/experiments.md` | Experiment protocol and dataset conventions |
 | `infra/` | Remote-host setup and SSH configuration template |
+| `realtime/` | Web app, voice agent, transport, GPU adapter and tests |
+| `docs/recreate-demo.md` | Fresh-checkout demo setup and handoff instructions |
 
 Generated artifacts belong in ignored `data/`, `checkpoints/`, `runs/` and
 `vendor/` directories, or on an explicitly configured external storage volume.
@@ -63,9 +72,13 @@ Keep private keys and service credentials outside tracked files.
 
 | Model ID | Model |
 | --- | --- |
+| `liveact` | SoulX-LiveAct |
 | `liveavatar` | Live Avatar |
 | `flashtalk` | SoulX-FlashTalk-14B |
-| `hunyuan_avatar` | HunyuanVideo-Avatar |
+| `hunyuan_avatar` | HunyuanVideo-Avatar (optional legacy offline comparator) |
+
+The main three-model matrix is LiveAct, Live Avatar and FlashTalk. Its frozen
+input specification is documented in the [zero-shot protocol](docs/zero-shot-baseline.md).
 
 Registration does not establish training support, checkpoint compatibility or
 hardware capacity. Use a separate environment for each upstream project and

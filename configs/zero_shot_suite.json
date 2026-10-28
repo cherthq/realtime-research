@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "suite_id": "facetime-avatar-zero-shot-v1",
+  "status": "input_preparation_configured_adapters_and_metrics_pending",
+  "models": ["liveact", "liveavatar", "flashtalk"],
+  "seeds": [0, 42],
+  "reference_image_count": 3,
+  "first_profile": "native",
+  "optional_second_profile": "facetime",
+  "avatar_prompt": "A single person is seated, facing the camera in a fixed upper-body video-call shot. The person speaks naturally with subtle head motion and blinking. Preserve the person's identity, clothing, lighting, and background. Keep the camera and background static. No cuts, transitions, captions, or additional people.",
+  "audio_preparation": {
+    "mode": "synthesize_fixed_replies_once_then_reuse_waveforms",
+    "provider": "kokoro-onnx",
+    "model_revision": "model-files-v1.1/kokoro-v1.0.onnx",
+    "voice_id": "af_heart",
+    "tts_language": "en-us",
+    "model_license": "Apache-2.0",
+    "model_card": "https://huggingface.co/hexgrad/Kokoro-82M",
+    "wrapper_license": "MIT",
+    "wrapper_version": "0.6.1",
+    "sentence_pause_seconds": 0.25,
+    "clause_pause_seconds": 0.1,
+    "trim_tts_segment_edges": true,
+    "fixed_gain": 0.9,
+    "checkpoints": [
+      {
+        "filename": "kokoro-v1.0.onnx",
+        "url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.onnx",
+        "sha256": "beb0d1848dee9a49da392cc3df26958d46cfa35d321edf434f52949153f0df3a"
+      },
+      {
+        "filename": "voices-v1.0.bin",
+        "url": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin",
+        "sha256": "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d"
+      }
+    ],
+    "language": "en",
+    "speech_style": "neutral",
+    "default_speed": 1.0,
+    "master_sample_rate_hz": 48000,
+    "master_channels": 1,
+    "master_sample_format": "pcm_s16le",
+    "leading_silence_seconds": 0.25,
+    "trailing_silence_seconds": 0.25,
+    "silence_policy": "insert_zero_pcm_samples_and_record_sample_ranges",
+    "duration_policy": "retain_actual_duration_do_not_pad_speech_to_a_fixed_clip_length",
+    "regenerate_per_avatar_model": false
+  },
+  "scenarios": [
+    {
+      "id": "s01_greeting",
+      "user_prompt": "Hi! Can you introduce yourself briefly?",
+      "tests": ["startup", "neutral_speech", "lip_sync"],
+      "tts_speed": 1.0,
+      "segments": [
+        {"kind": "speech", "text": "Hi, I'm your virtual assistant. It's good to meet you. We can talk through an idea, make a plan, or simply have a conversation. What would you like to start with?"}
+      ]
+    },
+    {
+      "id": "s02_articulation",
+      "user_prompt": "Please say this clearly: Peter packed a blue paper bag, and five friends waved from the window.",
+      "tests": ["lip_sync", "mouth_articulation"],
+      "tts_speed": 1.0,
+      "segments": [
+        {"kind": "speech", "text": "Peter packed a blue paper bag, and five friends waved from the window. Please bring my coffee before we leave. We will meet by the front door in a few minutes."}
+      ]
+    },
+    {
+      "id": "s03_numbers",
+      "user_prompt": "Read back this appointment: Tuesday at nine forty-five, room twenty-three, confirmation code seven four two nine.",
+      "tests": ["lip_sync", "numbers_and_short_phrases"],
+      "tts_speed": 1.0,
+      "segments": [
+        {"kind": "speech", "text": "Your appointment is on Tuesday at nine forty-five, in room twenty-three. Your confirmation code is seven, four, two, nine. Please arrive ten minutes before the appointment begins."}
+      ]
+    },
+    {
+      "id": "s04_fast_speech",
+      "user_prompt": "Quickly explain how to join a video call.",
+      "tests": ["lip_sync", "fast_speech", "throughput"],
+      "tts_speed": 1.25,
+      "segments": [
+        {"kind": "speech", "text": "Open the invitation, check your microphone, switch on your camera, and press join. If you cannot hear anyone, check your speaker settings and reconnect your headphones. Keep the call window open while the connection starts."}
+      ]
+    },
+    {
+      "id": "s05_pause_resume",
+      "user_prompt": "Tell me you are thinking, pause for two seconds, then give a short answer.",
+      "tests": ["silence_mouth_motion", "speech_resume", "continuity"],
+      "tts_speed": 1.0,
+      "segments": [
+        {"kind": "speech", "text": "Let me think about that for a moment."},
+        {"kind": "silence", "duration_seconds": 2.0},
+        {"kind": "speech", "text": "I would start with the simplest version, test it carefully, and improve one thing at a time."}
+      ]
+    },
+    {
+      "id": "s06_short_turns",
+      "user_prompt": "Give three separate check-in replies: greet me, confirm that you can hear me, and say we can continue. Leave one and a half seconds between replies.",
+      "tests": ["repeated_speech_onset", "silence_mouth_motion", "continuity"],
+      "tts_speed": 1.0,
+      "segments": [
+        {"kind": "speech", "text": "Hello, I'm here. It's good to see you."},
+        {"kind": "silence", "duration_seconds": 1.5},
+        {"kind": "speech", "text": "Yes, I can hear you clearly. The connection sounds good."},
+        {"kind": "silence", "duration_seconds": 1.5},
+        {"kind": "speech", "text": "All right, let's continue. Tell me what you have in mind."}
+      ]
+    }
+  ]
+}

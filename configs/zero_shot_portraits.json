@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "generation_date": "2026-10-24",
+  "use_case": "synthetic_upper_body_avatar_validation",
+  "portraits": [
+    {
+      "id": "ref01",
+      "path": "images/ref01.png",
+      "source": "OpenAI built-in image generation tool",
+      "synthetic": true,
+      "real_person_reference_supplied": false,
+      "prompt": "Use case: photorealistic-natural. Asset type: synthetic reference image for an image-and-audio-driven video avatar benchmark. Generate exactly ONE standalone photorealistic image, not a collage. A fictional adult East Asian man, approximately 30 years old, short dark hair, clean shaven, plain muted navy crewneck shirt. This is an invented person, not a celebrity or a likeness of any real individual. Seated facing directly into an eye-level camera, neutral attentive expression, lips gently closed, eyes open and unobstructed. Landscape 4:3 composition, 1536 by 1152 pixels. Medium upper-body framing from above the complete head down to the waist, full shoulders and torso clearly visible, forearms and relaxed hands naturally resting near the lower frame, enough headroom. Subject centered with shoulders square to the camera. Quiet ordinary home-office background with a plain wall and subtle natural room detail, soft even daylight on face, natural skin pores and realistic fabric texture. Clear sharp face with no artificial depth-of-field blur. Unstaged realistic video-call still, not glamorous studio photography. No screens, text, subtitles, logos, watermarks, other people, sunglasses, masks, microphones, visible phone, UI, split panels or frame borders. No dramatic shadows or hand covering the face. Opaque background.",
+      "preprocessing": "none; generated original copied byte-for-byte",
+      "rights_note": "Synthetic benchmark reference; subject to applicable provider terms, not CC/public-domain or a guarantee of non-resemblance."
+    },
+    {
+      "id": "ref02",
+      "path": "images/ref02.png",
+      "source": "OpenAI built-in image generation tool",
+      "synthetic": true,
+      "real_person_reference_supplied": false,
+      "prompt": "Use case: photorealistic-natural. Asset type: synthetic reference image for an image-and-audio-driven video avatar benchmark. Generate exactly ONE standalone photorealistic image, not a collage. A fictional adult Black woman, approximately 35 years old, medium-length natural curly hair kept clear of her eyes and lips, plain muted olive crewneck shirt. This is an invented person, not a celebrity or a likeness of any real individual. Seated facing directly into an eye-level camera, neutral attentive expression, lips gently closed, eyes open and unobstructed. Landscape 4:3 composition, 1536 by 1152 pixels. Medium upper-body framing from above the complete head down to the waist, full shoulders and torso clearly visible, forearms and relaxed hands naturally resting near the lower frame, enough headroom. Subject centered with shoulders square to the camera. Quiet ordinary home-office background with a plain wall and subtle natural room detail, soft even daylight on face, natural skin pores and realistic fabric texture. Clear sharp face with no artificial depth-of-field blur. Unstaged realistic video-call still, not glamorous studio photography. No screens, text, subtitles, logos, watermarks, other people, sunglasses, masks, microphones, visible phone, UI, split panels or frame borders. No dramatic shadows or hand covering the face. Opaque background.",
+      "preprocessing": "none; generated original copied byte-for-byte",
+      "rights_note": "Synthetic benchmark reference; subject to applicable provider terms, not CC/public-domain or a guarantee of non-resemblance."
+    },
+    {
+      "id": "ref03",
+      "path": "images/ref03.png",
+      "source": "OpenAI built-in image generation tool",
+      "synthetic": true,
+      "real_person_reference_supplied": false,
+      "prompt": "Use case: photorealistic-natural. Asset type: synthetic reference image for an image-and-audio-driven video avatar benchmark. Generate exactly ONE standalone photorealistic image, not a collage. A fictional adult white man, approximately 45 years old, short slightly graying brown hair, clean shaven, plain muted gray-blue crewneck shirt. This is an invented person, not a celebrity or a likeness of any real individual. Seated facing directly into an eye-level camera, neutral attentive expression, lips gently closed, eyes open and unobstructed. Landscape 4:3 composition, 1536 by 1152 pixels. Medium upper-body framing from above the complete head down to the waist, full shoulders and torso clearly visible, forearms and relaxed hands naturally resting near the lower frame, enough headroom. Subject centered with shoulders square to the camera. Quiet ordinary home-office background with a plain wall and subtle natural room detail, soft even daylight on face, natural skin pores and realistic fabric texture. Clear sharp face with no artificial depth-of-field blur. Unstaged realistic video-call still, not glamorous studio photography. No screens, text, subtitles, logos, watermarks, other people, sunglasses, masks, microphones, visible phone, UI, split panels or frame borders. No dramatic shadows or hand covering the face. Opaque background.",
+      "preprocessing": "none; generated original copied byte-for-byte",
+      "rights_note": "Synthetic benchmark reference; subject to applicable provider terms, not CC/public-domain or a guarantee of non-resemblance."
+    }
+  ]
+}

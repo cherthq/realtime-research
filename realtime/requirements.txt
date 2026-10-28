@@ -1,0 +1,10 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+pydantic-settings>=2.8,<3
+livekit==1.2.0
+livekit-api==1.2.2
+openai>=2,<3
+numpy>=2,<3
+Pillow>=11,<13
+httpx>=0.28,<1
+pytest>=8,<10

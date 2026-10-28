@@ -1,0 +1,12 @@
+# Direct dependencies verified with the pinned source on H100 80GB, Python 3.11.
+# Torch/CUDA and editable LTX packages are installed by setup-avatarforever.sh.
+numpy==2.2.6
+transformers==4.57.1
+accelerate==1.10.1
+safetensors==0.6.2
+einops==0.8.1
+scipy==1.16.2
+av==15.1.0
+Pillow==11.3.0
+tqdm==4.67.1
+huggingface-hub==0.36.0

@@ -30,3 +30,9 @@ data_fetching/pilot_samples/
 *.avi
 *.wav
 *.flac
+# Realtime demo dependencies and generated UI/test artifacts.
+node_modules/
+realtime/web/dist/
+realtime/web/test-results/
+realtime/web/playwright-report/
+*.tsbuildinfo
