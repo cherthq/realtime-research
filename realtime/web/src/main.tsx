@@ -330,7 +330,10 @@ function App({
   const startAttempt = useRef(0);
   const preferences = useRef<HTMLDialogElement>(null);
   const history = useRef<HTMLDialogElement>(null);
-  const [showCaptions, setShowCaptions] = useState(true);
+  // Choose the initial default only; resizing must preserve the user's toggle.
+  const [showCaptions, setShowCaptions] = useState(
+    () => !window.matchMedia('(max-width: 760px)').matches,
+  );
   const [showTimer, setShowTimer] = useState(true);
   const [cameraLarge, setCameraLarge] = useState(false);
   const [inputDevice, setInputDevice] = useState('');

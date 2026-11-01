@@ -87,15 +87,16 @@ export function LiveCaptions({
       aria-live="off"
       ref={viewport}
     >
-      {captions.map(({ row, retiring }) => (
-        <CaptionBubble
-          key={row.id}
-          row={row}
-          retiring={retiring}
-          active={active && enabled}
-          remove={remove}
-        />
-      ))}
+      {enabled &&
+        captions.map(({ row, retiring }) => (
+          <CaptionBubble
+            key={row.id}
+            row={row}
+            retiring={retiring}
+            active={active && enabled}
+            remove={remove}
+          />
+        ))}
       {reconnecting && enabled && active && (
         <span className="caption-reconnecting">Reconnecting captions…</span>
       )}
