@@ -1,0 +1,94 @@
+{
+  "portraits": [
+    {
+      "id": "call01",
+      "name": "Terrace",
+      "voice_id": "CwhRBWXzGAHq8TQ4Fs17",
+      "voice_note": "Warm, relaxed lower register with an unhurried delivery.",
+      "note": "",
+      "image": "call01.png",
+      "sha256": "a63f58260bcfdddac3bb12ca9457c2665ba66835736701c9b34be33b5bd2d1a5"
+    },
+    {
+      "id": "call02",
+      "name": "Studio desk",
+      "voice_id": "bIHbv24MWmeRgasZH58o",
+      "voice_note": "Light, easygoing conversational delivery.",
+      "note": "",
+      "image": "call02.png",
+      "sha256": "d300e9dedf30fb0a60a4394e013764b22a1f812c9f98848078b139363cb318be"
+    },
+    {
+      "id": "call03",
+      "name": "Round glasses",
+      "voice_id": "cjVigY5qzO86Huf0OWal",
+      "voice_note": "Smooth, clear mid-to-low register.",
+      "note": "",
+      "image": "call03.png",
+      "sha256": "99802f74376ddbde59087e41ab26d74ef009b1eba880ca3c0077fca00478f214"
+    },
+    {
+      "id": "call04",
+      "name": "Thumbs up",
+      "voice_id": "EXAVITQu4vr4xnSDxMaL",
+      "voice_note": "Warm, reassuring voice at a natural pace.",
+      "note": "Reaction effects are part of this reference image.",
+      "image": "call04.png",
+      "sha256": "1a06bf993613d24cd7247f20a50abdc82e0663649089981cf7ccb4ad6fa4252d"
+    },
+    {
+      "id": "call05",
+      "name": "Balloons",
+      "voice_id": "cgSgspJ2msm6clMCkdW9",
+      "voice_note": "Bright, playful conversational voice.",
+      "note": "Reaction effects are part of this reference image.",
+      "image": "call05.png",
+      "sha256": "e4beeb67a1337379e50b3be4c0feb614f3eb2d5658c4871863d69da4e3874c53"
+    },
+    {
+      "id": "call06",
+      "name": "Fireworks",
+      "voice_id": "pqHfZKP75CvOlQylNhV4",
+      "voice_note": "Mellow, grounded lower register.",
+      "note": "Reaction effects are part of this reference image.",
+      "image": "call06.png",
+      "sha256": "2bee16b9512d9c6dfcaecfa5a6479cdf60a14514d6b0eeac1abcfc4d3428fa62"
+    },
+    {
+      "id": "call07",
+      "name": "Brick room",
+      "voice_id": "FGY2WhTYpPnrIDTdsKH5",
+      "voice_note": "Lively, upbeat voice with clear diction.",
+      "note": "",
+      "image": "call07.png",
+      "sha256": "d262c164a194d350ab718352b0f99c2aff7ecb5dd0b101332b8892833e847b42"
+    },
+    {
+      "id": "call08",
+      "name": "Home office",
+      "voice_id": "TX3LPaxmHKxFdv7VOQHJ",
+      "voice_note": "Energetic, friendly conversational delivery.",
+      "note": "",
+      "image": "call08.png",
+      "sha256": "40d097dc83d534c8fa8017d3e4bdf58f380f8dadaa0870b029dae86493292cf6"
+    },
+    {
+      "id": "call09",
+      "name": "Peace sign",
+      "voice_id": "EXAVITQu4vr4xnSDxMaL",
+      "voice_note": "Warm, reassuring voice at a natural pace.",
+      "note": "Reaction effects are part of this reference image.",
+      "image": "call09.png",
+      "sha256": "88386b416f791a89e81d92afb9f64cab1c6e0795f38eac7298adb68b46afd74c"
+    },
+    {
+      "id": "call10",
+      "name": "Desk call",
+      "voice_id": "XrExE9yKIg1WjnnlVkGX",
+      "voice_note": "Warm, confident midrange delivery.",
+      "note": "",
+      "image": "call10.png",
+      "sha256": "09953b26121444d7b07267121ad5d5c3c1ad77ec7cceed0d5186aa7d78cd7f63"
+    }
+  ]
+}
