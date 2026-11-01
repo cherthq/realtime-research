@@ -969,8 +969,15 @@ legend,
     flex-wrap: wrap;
   }
   .call-page {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     width: calc(100% - 24px);
-    padding: 12px 0 max(16px, env(safe-area-inset-bottom));
+    min-height: 100dvh;
+    padding: max(16px, env(safe-area-inset-top)) 0 max(16px, env(safe-area-inset-bottom));
+  }
+  .call-page > * {
+    flex-shrink: 0;
   }
   .video-pair {
     --preview-width: 92px;
