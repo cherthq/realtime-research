@@ -984,23 +984,17 @@ legend,
     border-radius: 23px;
   }
   .large-tile {
-    aspect-ratio: auto;
-    height: min(760px, calc(100svh - 132px));
-    min-height: 380px;
     border-radius: 23px;
   }
-  /* Portrait presentation only; generation and stream geometry stay unchanged. */
-  .avatar-tile video,
-  .avatar-image,
-  .avatar-hold {
-    object-fit: cover;
-  }
+  /* Keep the same 4:3 stage and uncropped avatar media as desktop. */
   .small-tile {
-    aspect-ratio: 3 / 4;
     border-radius: 14px;
   }
+  .local-tile.small-tile .camera-placeholder {
+    padding: 8px 8px 22px;
+  }
   .local-tile.small-tile .camera-placeholder p {
-    font-size: 10px;
+    display: none;
   }
   .small-tile .tile-caption {
     left: 8px;
