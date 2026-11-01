@@ -439,6 +439,9 @@ svg {
   border-radius: 6px;
   font-size: 11px;
 }
+.mobile-playback-status {
+  display: none;
+}
 .call-footer {
   padding: 20px 0 0;
 }
@@ -1074,11 +1077,21 @@ legend,
     padding: 24px 14px 12px;
   }
   .video-delay {
-    top: 44px;
-    left: 14px;
+    display: none;
   }
   .call-footer {
-    padding: 14px 0 0;
+    padding: 4px 0 0;
+  }
+  .mobile-playback-status {
+    display: block;
+    /* Reserve one line so intermittent delays cannot move the video or controls. */
+    min-height: 16px;
+    margin: 0 0 6px;
+    color: #ffdab4;
+    font-size: 11px;
+    line-height: 16px;
+    text-align: center;
+    pointer-events: none;
   }
   .call-controls {
     display: grid;

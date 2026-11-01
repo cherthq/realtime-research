@@ -878,6 +878,7 @@ function App({
                 ? 'Thinking…'
                 : 'Connected';
   const locked = !!session || pending;
+  const videoDelayed = !!(session && hasVideo && (metrics?.video_delayed || deliveryDelayed));
   const updateAvailable =
     !import.meta.env.DEV &&
     !!health?.ui_asset &&
@@ -1008,7 +1009,7 @@ function App({
           <div className="stage-brand">
             <Brand />
           </div>
-          {session && hasVideo && (metrics?.video_delayed || deliveryDelayed) && (
+          {videoDelayed && (
             <span className="video-delay" role="status">
               Video delayed
             </span>
@@ -1033,6 +1034,9 @@ function App({
       <div ref={audio} className="audio-container" />
 
       <footer className="call-footer">
+        <p className="mobile-playback-status" role="status">
+          {videoDelayed ? 'Video delayed' : ''}
+        </p>
         {queue.queued && !session && !pending && (
           <div className="queue-status" role="status" aria-live="polite">
             <strong>
