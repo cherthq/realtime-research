@@ -19,10 +19,6 @@ and vision, ElevenLabs generates speech, and LiveKit Cloud carries audio/video.
 Ten reference portraits and stock-voice assignments are included. Model weights,
 private character assets and API keys stay on your server.
 
-> [!NOTE]
-> The browser receives only session-scoped connection details. Keep provider keys
-> in the backend’s private environment file.
-
 ## Demo
 
 Watch a conversation with live captions, interruption and an animated avatar.
