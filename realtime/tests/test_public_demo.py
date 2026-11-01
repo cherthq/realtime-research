@@ -62,7 +62,11 @@ def test_public_gateway_keeps_server_secret_and_blocks_admin_routes():
         response = client.get(
             "/api/access", headers={"authorization": "evil", "cookie": "private=evil"}
         )
-        assert response.json() == {"required": False, "authenticated": True}
+        assert response.json() == {
+            "required": False,
+            "authenticated": True,
+            "queue_required": True,
+        }
         assert secret not in response.text and "set-cookie" not in response.headers
         assert client.get("/api/avatars/call11/image").status_code == 404
         assert client.get("/api/avatars/ref01/image").status_code == 404

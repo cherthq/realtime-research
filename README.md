@@ -31,6 +31,9 @@ https://github.com/user-attachments/assets/953b779c-8f33-426b-8076-3ae8d0138d2b
 
 **[Try the live demo →](https://dunlichan.com/projects/chert/)**
 
+One person can call at a time. Join the waiting queue when the demo is busy;
+your position updates automatically, with 30 seconds to start when it is your turn.
+
 ## Set up
 
 Use an Ubuntu GPU host with an H100 80 GB, Python 3.11, Node.js 22.12+, FFmpeg and

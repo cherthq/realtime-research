@@ -7,6 +7,7 @@ The underlying application must use AVATAR_CATALOG=demo and stay on loopback.
 from __future__ import annotations
 
 import argparse
+import asyncio
 from collections import deque
 from contextlib import asynccontextmanager
 import json
@@ -20,6 +21,7 @@ from fastapi import FastAPI, Request
 from starlette.responses import JSONResponse, Response
 
 from .scripts.demo_host import DEFAULT, load
+from .call_queue import CallQueue
 
 PUBLIC_IDS = {f"call{i:02}" for i in range(1, 11)}
 WEBSITE_ORIGINS = {"https://dunlichan.com", "https://www.dunlichan.com"}
@@ -39,6 +41,7 @@ def allowed(method: str, path: str) -> bool:
                 "/api/avatars",
                 "/api/voices",
                 "/api/scenarios",
+                "/api/queue",
             }
             or re.fullmatch(r"/assets/[A-Za-z0-9_.-]+", path)
             or re.fullmatch(r"/api/avatars/call(?:0[1-9]|10)/image", path)
@@ -46,11 +49,11 @@ def allowed(method: str, path: str) -> bool:
             or re.fullmatch(r"/api/sessions/[a-f0-9]{24}(?:/transcripts)?", path)
         )
     if method == "POST":
-        return path == "/api/sessions" or bool(
+        return path in {"/api/sessions", "/api/queue"} or bool(
             re.fullmatch(r"/api/sessions/[a-f0-9]{24}/(?:interrupt|playback)", path)
         )
-    return method == "DELETE" and bool(
-        re.fullmatch(r"/api/sessions/[a-f0-9]{24}", path)
+    return method == "DELETE" and (
+        path == "/api/queue" or bool(re.fullmatch(r"/api/sessions/[a-f0-9]{24}", path))
     )
 
 
@@ -86,13 +89,39 @@ def create_gateway(origin: str, upstream: str, token: str, *, transport=None):
         base_url=upstream, timeout=950, transport=transport, follow_redirects=False
     )
     limiter = StartLimiter()
+    starts: set[asyncio.Task] = set()
+
+    async def health():
+        response = await client.get(
+            "/api/health", headers={"Authorization": f"Bearer {token}"}, timeout=5
+        )
+        response.raise_for_status()
+        return response.json()
+
+    queue = CallQueue(health)
+
+    async def start_call(key, body):
+        try:
+            return await client.post(
+                "/api/sessions",
+                content=body,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+            )
+        finally:
+            await queue.finish(key)
 
     @asynccontextmanager
     async def lifespan(app):
         yield
+        if starts:
+            await asyncio.gather(*starts, return_exceptions=True)
         await client.aclose()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.queue = queue
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
@@ -155,18 +184,19 @@ def create_gateway(origin: str, upstream: str, token: str, *, transport=None):
             return JSONResponse(
                 {"detail": "Not available in the public demo"}, status_code=404
             )
+        queue_key = request.headers.get("x-queue-key", "")
+        if path == "/api/queue":
+            if request.method == "DELETE":
+                return JSONResponse(await queue.leave(queue_key))
+            return JSONResponse(
+                await queue.visit(queue_key, join=request.method == "POST")
+            )
         body = bytearray()
         async for chunk in request.stream():
             body.extend(chunk)
             if len(body) > MAX_BODY:
                 return JSONResponse({"detail": "Request too large"}, status_code=413)
         if path == "/api/sessions" and request.method == "POST":
-            if not limiter.admit(time.monotonic()):
-                return JSONResponse(
-                    {"detail": "Please wait before starting another call"},
-                    status_code=429,
-                    headers={"Retry-After": "60"},
-                )
             try:
                 payload = json.loads(body)
             except (ValueError, UnicodeDecodeError):
@@ -181,6 +211,14 @@ def create_gateway(origin: str, upstream: str, token: str, *, transport=None):
                     {"detail": "Select a public avatar for a live call"},
                     status_code=422,
                 )
+            await queue.claim(queue_key)
+            if not limiter.admit(time.monotonic()):
+                await queue.finish(queue_key)
+                return JSONResponse(
+                    {"detail": "Please wait before starting another call"},
+                    status_code=429,
+                    headers={"Retry-After": "60"},
+                )
         headers = {"Authorization": f"Bearer {token}"}
         for key in ("content-type", "x-session-key"):
             if key in request.headers:
@@ -188,20 +226,36 @@ def create_gateway(origin: str, upstream: str, token: str, *, transport=None):
         # Access is granted by this gateway; browser never receives the app secret.
         target_path = "/api/health" if path == "/api/access" else path
         try:
-            result = await client.request(
-                request.method,
-                target_path,
-                params=request.query_params,
-                content=bytes(body),
-                headers=headers,
-            )
+            if path == "/api/sessions" and request.method == "POST":
+                task = asyncio.create_task(start_call(queue_key, bytes(body)))
+                starts.add(task)
+
+                # A closed browser must not release admission while the backend
+                # is still starting a call. SessionManager reaps abandoned calls.
+                def finished(task):
+                    starts.discard(task)
+                    if not task.cancelled():
+                        task.exception()  # Observe errors even if the browser left.
+
+                task.add_done_callback(finished)
+                result = await asyncio.shield(task)
+            else:
+                result = await client.request(
+                    request.method,
+                    target_path,
+                    params=request.query_params,
+                    content=bytes(body),
+                    headers=headers,
+                )
         except httpx.HTTPError:
             return JSONResponse(
                 {"detail": "The demo is temporarily offline"}, status_code=503
             )
         data = result.content
         if result.status_code == 200 and path == "/api/access":
-            data = json.dumps({"required": False, "authenticated": True}).encode()
+            data = json.dumps(
+                {"required": False, "authenticated": True, "queue_required": True}
+            ).encode()
         elif result.status_code == 200 and path == "/api/avatars":
             avatars = result.json()
             if {a["id"] for a in avatars} != PUBLIC_IDS:

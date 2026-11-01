@@ -34,11 +34,28 @@ The gateway:
 - Rejects unexpected hosts, cross-origin API requests and unsupported routes.
 - Requires a session-specific key for call control, enforced by the application.
 - Limits starts to three per minute and thirty per hour globally; one GPU call at a time.
+- Uses a first-come, first-served waiting queue. Visitors see their position and
+  have 30 seconds to start once offered a turn. Queue polling uses no GPU or voice
+  API calls. The first visitor can start immediately when the demo is free.
+- Removes abandoned waiting places after 90 seconds without a heartbeat. Visitors
+  can leave immediately, or refresh the same tab without losing their place.
 - Keeps the ten-minute call limit and uses polling for bounded HTTP responses.
+
+Run exactly **one gateway process and one application process**, as in the supplied
+launchers. Admission is serialized in the gateway; the application independently
+locks the single GPU session through startup and teardown. All public session
+starts require the current queue ticket, including direct API requests.
+
+Queue tickets are random, stored in the visitor's tab, and sent only through the
+`X-Queue-Key` header. They grant a place in line, not access to other calls or
+provider credentials. The queue holds at most 100 visitors and lives in memory;
+after a gateway restart, waiting visitors must join again. An existing call still
+holds the application lease. Keep the public gateway running during normal use.
 
 These limits control a small public demo, not production abuse prevention or
 multi-user scale. Rate counters reset when the gateway restarts. For a sustained
-public launch, add visitor identity, a queue and provider spending limits.
+public launch, add visitor identity and provider spending limits; multiple worker
+processes/hosts require a shared admission service rather than this in-memory queue.
 
 ## Website
 

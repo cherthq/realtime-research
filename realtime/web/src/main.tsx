@@ -8,6 +8,7 @@ import { Conversation } from './Conversation';
 import { LiveCaptions } from './LiveCaptions';
 import { DeviceSettings } from './DeviceSettings';
 import { useTranscripts } from './useTranscripts';
+import { useCallQueue } from './useCallQueue';
 import './style.css';
 
 type Avatar = {
@@ -214,7 +215,11 @@ function Icon({
 }
 
 function AccessGate() {
-  const [access, setAccess] = useState<{ required: boolean; authenticated: boolean } | null>(null);
+  const [access, setAccess] = useState<{
+    required: boolean;
+    authenticated: boolean;
+    queue_required?: boolean;
+  } | null>(null);
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
@@ -248,7 +253,13 @@ function AccessGate() {
       setError((e as Error).message);
     }
   }
-  if (access?.authenticated) return <App onLock={access.required ? lock : undefined} />;
+  if (access?.authenticated)
+    return (
+      <App
+        queueRequired={access.queue_required === true}
+        onLock={access.required ? lock : undefined}
+      />
+    );
   return (
     <main className="access-page">
       <Brand />
@@ -277,7 +288,14 @@ function AccessGate() {
   );
 }
 
-function App({ onLock }: { onLock?: () => Promise<void> }) {
+function App({
+  onLock,
+  queueRequired = false,
+}: {
+  onLock?: () => Promise<void>;
+  queueRequired?: boolean;
+}) {
+  const queue = useCallQueue(queueRequired);
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [cases, setCases] = useState<Scenario[]>([]);
   const [avatarId, setAvatarId] = useState('call01');
@@ -510,6 +528,7 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
   }
 
   async function start() {
+    if (pending || current.current) return;
     const attempt = ++startAttempt.current;
     setError('');
     setPending(true);
@@ -524,8 +543,29 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
         await (sound as AudioContext & { setSinkId: (id: string) => Promise<void> }).setSinkId(
           outputDevice,
         );
+      let queueKey = '';
+      if (queue.enabled) {
+        if (queue.place?.state === 'ready' && queue.remaining > 0) {
+          queueKey = queue.key();
+        } else {
+          const joined = await queue.join();
+          if (joined.place.state !== 'ready') {
+            await sound.close();
+            audioContext.current = null;
+            return; // Waiting does not request the mic, LiveKit or GPU.
+          }
+          queueKey = joined.key;
+        }
+        queue.pause();
+      }
+      if (attempt !== startAttempt.current) {
+        if (queue.enabled) await queue.leave();
+        await sound.close().catch(() => {});
+        return;
+      }
       const s = await api<Session>('/sessions', {
         method: 'POST',
+        headers: queueKey ? { 'X-Queue-Key': queueKey } : {},
         body: JSON.stringify({
           avatar_id: avatarId,
           model_id: modelId,
@@ -533,6 +573,7 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
           voice_profile_id: voiceId || null,
         }),
       });
+      if (queue.enabled) queue.clear();
       if (attempt !== startAttempt.current) {
         await api(
           `/sessions/${s.id}`,
@@ -666,6 +707,7 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
       }
     } catch (e) {
       if (attempt === startAttempt.current) {
+        if (queue.enabled) await queue.leave();
         setError((e as Error).message);
         await stop();
       }
@@ -814,27 +856,38 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
     .padStart(2, '0')}`;
   const state = pending
     ? 'Connecting…'
-    : !session
-      ? health?.livekit
-        ? 'Ready'
-        : 'Offline'
-      : controlInterrupted || mediaInterrupted
-        ? 'Reconnecting…'
-        : metrics?.state === 'responding'
-          ? 'Speaking'
-          : captions.checking
-            ? 'Checking…'
-            : metrics?.state === 'buffering'
-              ? 'Thinking…'
-              : 'Connected';
+    : queue.queued
+      ? queue.place?.state === 'ready'
+        ? 'Your turn'
+        : 'Waiting'
+      : !session
+        ? health?.livekit
+          ? 'Ready'
+          : 'Offline'
+        : controlInterrupted || mediaInterrupted
+          ? 'Reconnecting…'
+          : metrics?.state === 'responding'
+            ? 'Speaking'
+            : captions.checking
+              ? 'Checking…'
+              : metrics?.state === 'buffering'
+                ? 'Thinking…'
+                : 'Connected';
   const locked = !!session || pending;
   const updateAvailable =
     !import.meta.env.DEV &&
     !!health?.ui_asset &&
     health.ui_asset !== new URL(import.meta.url).pathname;
+  const startLabel = pending
+    ? 'Connecting…'
+    : queue.place?.state === 'ready'
+      ? 'Start your call'
+      : queue.enabled && health?.active_session
+        ? 'Join queue'
+        : 'Start call';
 
   return (
-    <main className="call-page">
+    <main className={`call-page ${queue.queued ? 'has-queue' : ''}`}>
       <h1 className="sr-only">Chert video call</h1>
 
       {error && (
@@ -976,6 +1029,28 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
       <div ref={audio} className="audio-container" />
 
       <footer className="call-footer">
+        {queue.queued && !session && !pending && (
+          <div className="queue-status" role="status" aria-live="polite">
+            <strong>
+              {queue.place?.state === 'ready'
+                ? 'It’s your turn.'
+                : queue.place
+                  ? `You’re #${queue.place.position} in line.`
+                  : 'Checking your place…'}
+            </strong>
+            <span>
+              {queue.notice ||
+                (queue.place?.state === 'ready'
+                  ? `Start within ${queue.remaining}s to keep your place.`
+                  : 'One call at a time. Keep this page open; your place updates automatically.')}
+            </span>
+          </div>
+        )}
+        {!queue.queued && queue.notice && (
+          <p className="queue-notice" role="status">
+            {queue.notice}
+          </p>
+        )}
         <div className="call-controls" role="group" aria-label="Call controls">
           <button
             className={`icon-control ${camera.enabled ? 'active' : ''}`}
@@ -1044,16 +1119,42 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
             >
               <Icon name="phone" />
             </button>
+          ) : queue.queued && queue.place?.state !== 'ready' && !pending ? (
+            <button
+              className="call-button"
+              onClick={() => void queue.leave()}
+              aria-label="Leave queue"
+              title="Leave queue"
+            >
+              <Icon name="close" />
+              <span className="start-label">Leave queue</span>
+            </button>
           ) : (
             <button
               className="call-button"
-              disabled={pending || !health?.livekit || !avatar?.image_available || updateAvailable}
+              disabled={
+                pending ||
+                !health?.livekit ||
+                !avatar?.image_available ||
+                updateAvailable ||
+                (queue.place?.state === 'ready' && queue.remaining <= 0)
+              }
               onClick={() => void start()}
-              aria-label={pending ? 'Connecting…' : 'Start call'}
-              title="Start call"
+              aria-label={startLabel}
+              title={startLabel}
             >
               <Icon name="phone" />
-              <span className="start-label">{pending ? 'Connecting…' : 'Start call'}</span>
+              <span className="start-label">{startLabel}</span>
+            </button>
+          )}
+          {queue.place?.state === 'ready' && !pending && !session && (
+            <button
+              className="icon-control"
+              onClick={() => void queue.leave()}
+              aria-label="Leave queue"
+              title="Leave queue"
+            >
+              <Icon name="close" />
             </button>
           )}
         </div>

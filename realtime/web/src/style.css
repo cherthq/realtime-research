@@ -69,6 +69,29 @@ svg {
   padding: 28px 0 max(20px, env(safe-area-inset-bottom));
   min-height: 100svh;
 }
+.call-page.has-queue {
+  width: min(1180px, calc((100svh - 234px) * 4 / 3), calc(100% - 64px));
+}
+.queue-status {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 auto 16px;
+  text-align: center;
+  line-height: 1.45;
+}
+.queue-status strong {
+  font-size: 16px;
+  font-weight: 550;
+}
+.queue-status span,
+.queue-notice {
+  font-size: 13px;
+  color: var(--muted);
+}
+.queue-notice {
+  text-align: center;
+}
 .video-pair {
   --preview-width: clamp(112px, 18%, 184px);
   --preview-inset: 20px;
@@ -939,6 +962,12 @@ legend,
   }
 }
 @media (max-width: 760px) {
+  .call-page.has-queue {
+    width: calc(100% - 24px);
+  }
+  .has-queue .call-controls {
+    flex-wrap: wrap;
+  }
   .call-page {
     width: calc(100% - 24px);
     padding: 12px 0 max(16px, env(safe-area-inset-bottom));
