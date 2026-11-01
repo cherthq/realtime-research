@@ -7,5 +7,5 @@ openai>=2,<3
 numpy>=2,<3
 Pillow>=11,<13
 httpx>=0.28,<1
-websockets>=14,<17
+websockets>=14,<18
 pytest>=8,<10

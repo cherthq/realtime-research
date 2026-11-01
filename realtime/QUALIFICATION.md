@@ -9,6 +9,12 @@ Short synthetic-input browser checks have exercised speech, captions, interrupti
 web lookup, spoken search acknowledgement and subsequent replies. These checks
 do not establish naturalness, physical speaker timing or multi-user capacity.
 
+The public-demo cleanup passed 231 backend tests from an exported clean checkout
+(six opt-in tests skipped), eleven browser UI checks, and a real stock-voice
+call through the local connection. The latter received 512×384 video and a
+completed spoken reply with no browser errors. Public HTTPS media delivery
+remains separate from that local-connection result.
+
 Long-call visual drift remains unresolved. A twelve-minute replay showed late
 scene/color degradation and false color. Decoder comparisons did not remove it.
 Experimental cache/scene-prompt changes have not passed visual qualification and
