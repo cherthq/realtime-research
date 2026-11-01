@@ -39,6 +39,9 @@ class GPUWorkerPool:
             else "unloaded",
             "qualification": "streaming_experimental",
             "cold_load_seconds": self.worker.load_seconds if loaded else None,
+            "listening_control": self.worker.info.get("listening_control")
+            if loaded
+            else None,
         }
 
     async def acquire(self, session_id: str, image: Path):
@@ -57,9 +60,16 @@ class GPUWorkerPool:
                             str(self.settings.avatarforever_weights),
                             "--image",
                             str(image),
+                            "--listening-profile",
+                            self.settings.avatarforever_listening_profile,
                             *(
                                 ["--compile-blocks"]
                                 if self.settings.avatarforever_compile_blocks
+                                else []
+                            ),
+                            *(
+                                ["--cache-prompt"]
+                                if self.settings.avatarforever_cache_prompt
                                 else []
                             ),
                         ],
@@ -69,6 +79,11 @@ class GPUWorkerPool:
                     )
                     await self.worker.start()
                 await self.worker.open_session(session_id, image)
+                if (
+                    self.settings.avatar_idle_motion
+                    and not self.settings.avatar_continuous_motion
+                ):
+                    await self.worker.prepare_idle(image)
                 return self.worker
             except BaseException:
                 self.owner = None

@@ -1,5 +1,6 @@
 import asyncio
 import io
+import os
 import struct
 import sys
 
@@ -7,11 +8,45 @@ import numpy as np
 import pytest
 
 from realtime.contracts import FRAME_SAMPLES, ResponseBuffer
-from realtime.gpu.wire import MAX_HEADER, encode, read
+from realtime.gpu.wire import MAX_BODY, MAX_HEADER, encode, read, write
 from realtime.gpu_client import GPUProcess
-from realtime.streaming import take_batch
+from realtime.streaming import take_batch, LOOKAHEAD_SAMPLES
 from realtime.config import Settings
 from realtime.gpu_pool import GPUWorkerPool
+
+
+@pytest.mark.parametrize("shared", [False, True])
+def test_frame_transport_preserves_previous_output_while_buffer_is_reused(
+    tmp_path, shared
+):
+    if shared and os.name != "posix":
+        pytest.skip("Inherited shared descriptors require POSIX")
+
+    async def run():
+        gpu = GPUProcess(
+            [sys.executable, "-m", "realtime.tests.fake_gpu"],
+            tmp_path / "transport.log",
+            shared_frames=shared,
+        )
+        image = tmp_path / "ref.bin"
+        image.write_bytes(b"reference")
+        try:
+            await gpu.start()
+            assert gpu.info["frame_transport"] == ("mmap" if shared else "pipe")
+            await gpu.open_session("transport", image)
+            buffer = ResponseBuffer()
+            buffer.replace("first", np.ones(25 * FRAME_SAMPLES, np.int16))
+            first = await gpu.generate(take_batch(buffer))
+            old_epoch = buffer.epoch
+            buffer.replace("second", np.ones(25 * FRAME_SAMPLES, np.int16))
+            second = await gpu.generate(take_batch(buffer))
+            assert np.all(first.frames == old_epoch)
+            assert np.all(second.frames == buffer.epoch)
+        finally:
+            await gpu.close()
+        assert gpu.frame_buffer is None and gpu.frame_file is None
+
+    asyncio.run(run())
 
 
 def test_paced_audio_isolation_and_final_padding():
@@ -21,19 +56,24 @@ def test_paced_audio_isolation_and_final_padding():
     buffer.append("one", epoch, first[:-1])
     assert take_batch(buffer) is None and buffer.position == 0
     buffer.append("one", epoch, first[-1:])
+    assert take_batch(buffer) is None
+    tail = np.arange(32 * FRAME_SAMPLES + LOOKAHEAD_SAMPLES + 1001, dtype=np.int16)
+    buffer.append("one", epoch, tail[:LOOKAHEAD_SAMPLES])
     a = take_batch(buffer)
     assert np.array_equal(a.pcm, first) and a.valid_samples == len(first)
+    assert np.array_equal(a.lookahead, tail[:LOOKAHEAD_SAMPLES])
     assert take_batch(buffer) is None
-    tail = np.arange(32 * FRAME_SAMPLES + 1001, dtype=np.int16)
-    buffer.append("one", epoch, tail)
+    buffer.append("one", epoch, tail[LOOKAHEAD_SAMPLES:])
     b = take_batch(buffer)
     assert b.sample_start == len(first) and len(b.pcm) == 32 * FRAME_SAMPLES
     assert take_batch(buffer) is None
     buffer.finish("one", epoch)
     c = take_batch(buffer)
-    assert c.valid_samples == 1001 and not c.pcm[1001:].any()
+    remaining = LOOKAHEAD_SAMPLES + 1001
+    assert c.valid_samples == remaining and not c.pcm[remaining:].any()
+    assert not c.lookahead.any()
     assert np.array_equal(
-        np.concatenate((a.pcm, b.pcm, c.pcm[:1001])), np.concatenate((first, tail))
+        np.concatenate((a.pcm, b.pcm, c.pcm[:remaining])), np.concatenate((first, tail))
     )
     buffer.cancel()
     assert not buffer.append("one", epoch, first)
@@ -54,6 +94,37 @@ def test_wire_rejects_invalid_or_truncated_allocations():
         read(io.BytesIO(struct.pack("!I", len(bad)) + bad))
 
 
+def test_wire_buffer_write_preserves_bytes_and_handles_short_writes():
+    class ShortWriter(io.BytesIO):
+        def write(self, data):
+            return super().write(data[:7])
+
+    pixels = np.arange(1024, dtype=np.uint16).reshape(16, 64)
+    stream = ShortWriter()
+    write(stream, {"type": "frames"}, pixels)
+    assert stream.getvalue() == encode({"type": "frames"}, pixels.tobytes())
+    assert read(io.BytesIO(stream.getvalue()))[1] == pixels.tobytes()
+    write(stream, {"type": "cancelled"})
+
+
+def test_wire_buffer_write_checks_bounds_before_writing_and_fails_on_closed_pipe():
+    stream = io.BytesIO()
+    with pytest.raises(ValueError, match="payload exceeds"):
+        write(stream, {}, np.empty(MAX_BODY + 1, dtype=np.uint8))
+    with pytest.raises(ValueError, match="header exceeds"):
+        write(stream, {"too_long": "x" * MAX_HEADER})
+    with pytest.raises(TypeError):
+        write(stream, {}, np.zeros((10, 10), dtype=np.uint8)[:, ::2])
+    assert stream.getvalue() == b""
+
+    class ClosedPipe:
+        def write(self, data):
+            return 0
+
+    with pytest.raises(EOFError):
+        write(ClosedPipe(), {})
+
+
 def test_resident_process_continuity_cancel_new_epoch_and_failure(tmp_path):
     async def run():
         gpu = GPUProcess(
@@ -65,6 +136,18 @@ def test_resident_process_continuity_cancel_new_epoch_and_failure(tmp_path):
         await gpu.open_session("test-session", image)
         process_id = gpu.process.pid
         buffer = ResponseBuffer()
+        buffer.replace(
+            "lookahead",
+            np.concatenate(
+                (
+                    np.ones(25 * FRAME_SAMPLES, dtype=np.int16),
+                    np.full(LOOKAHEAD_SAMPLES, 7, dtype=np.int16),
+                )
+            ),
+        )
+        assert (
+            await gpu.generate(take_batch(buffer))
+        ).audio.valid_samples == 25 * FRAME_SAMPLES
         buffer.replace("normal", np.ones(57 * FRAME_SAMPLES, dtype=np.int16))
         for _ in range(2):
             batch = take_batch(buffer)
@@ -85,6 +168,10 @@ def test_resident_process_continuity_cancel_new_epoch_and_failure(tmp_path):
         result = await gpu.generate(take_batch(buffer))
         assert len(result.frames) == 1 and result.audio.valid_samples == 1001
         assert gpu.process.pid == process_id
+        buffer.replace("strided", np.ones(1001, dtype=np.int16))
+        result = await gpu.generate(take_batch(buffer))
+        assert result.frames.shape == (1, 480, 640, 3)
+        assert np.all(result.frames == buffer.epoch % 256)
         buffer.replace("crash", np.ones(1000, dtype=np.int16))
         with pytest.raises(RuntimeError, match="GPU generation failed"):
             await gpu.generate(take_batch(buffer))
@@ -151,7 +238,9 @@ def test_model_pool_reuses_weights_but_resets_character_session(tmp_path):
                 **kwargs,
             )
 
-        pool = GPUWorkerPool(Settings(_env_file=None), factory=factory)
+        pool = GPUWorkerPool(
+            Settings(avatar_catalog="research", _env_file=None), factory=factory
+        )
         first = await pool.acquire("first", image1)
         pid = first.process.pid
         with pytest.raises(RuntimeError, match="leased"):

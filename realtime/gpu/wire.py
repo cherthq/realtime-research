@@ -9,13 +9,34 @@ MAX_HEADER = 4096
 MAX_BODY = 32 * 1024 * 1024
 
 
-def encode(header: dict, body: bytes = b"") -> bytes:
-    if len(body) > MAX_BODY:
+def _prefix(header: dict, body_size: int) -> bytes:
+    if body_size > MAX_BODY:
         raise ValueError("GPU payload exceeds bound")
-    raw = json.dumps({**header, "body_bytes": len(body)}, allow_nan=False).encode()
+    raw = json.dumps({**header, "body_bytes": body_size}, allow_nan=False).encode()
     if len(raw) > MAX_HEADER:
         raise ValueError("GPU header exceeds bound")
-    return struct.pack("!I", len(raw)) + raw + body
+    return struct.pack("!I", len(raw)) + raw
+
+
+def encode(header: dict, body: bytes = b"") -> bytes:
+    return _prefix(header, len(body)) + body
+
+
+def write(stream, header: dict, body=b""):
+    """Write a bounded packet without copying a full RGB batch into bytes twice.
+
+    The caller owns the write lock and must retain the contiguous body until this
+    synchronous write finishes. The wire format is identical to ``encode``.
+    """
+    payload = memoryview(body).cast("B")
+    prefix = _prefix(header, payload.nbytes)
+    for part in (memoryview(prefix), payload):
+        while part:
+            count = stream.write(part)
+            if count is None or count <= 0:
+                raise EOFError("GPU IPC closed during write")
+            part = part[count:]
+    stream.flush()
 
 
 def parse_header(raw: bytes) -> dict:

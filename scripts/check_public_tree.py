@@ -25,6 +25,7 @@ PRIVATE_SUFFIXES = {
     ".webm",
     ".wav",
     ".flac",
+    ".mp3",
     ".zip",
     ".gz",
 }

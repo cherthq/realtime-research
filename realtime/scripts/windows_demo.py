@@ -45,8 +45,15 @@ HOP_HEADERS = {
 class Bridge(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, upstream):
+    def __init__(self, address, upstream, *, access_token=""):
+        if access_token and address[0] not in {"127.0.0.1", "localhost"}:
+            raise ValueError("Automatic demo access requires a loopback listener")
+        if access_token and (
+            len(access_token) > 256 or any(c.isspace() for c in access_token)
+        ):
+            raise ValueError("Invalid private access code")
         self.upstream = upstream
+        self.access_token = access_token
         super().__init__(address, BridgeRequest)
 
 
@@ -127,13 +134,37 @@ class BridgeRequest(BaseHTTPRequestHandler):
                 if key.lower() not in HOP_HEADERS
             }
             headers["Connection"] = "close"
-            upstream.request(self.command, self.path, body=body, headers=headers)
+            method, path = self.command, self.path
+            automatic_access = self.server.access_token and parsed.path == "/api/access"
+            if self.server.access_token and parsed.path.startswith("/api/"):
+                # This loopback-only bridge is the authenticated client. Never
+                # put the saved code into HTML, cookies or browser storage.
+                headers = {
+                    key: value
+                    for key, value in headers.items()
+                    if key.lower() != "authorization"
+                }
+                headers["Authorization"] = f"Bearer {self.server.access_token}"
+                if automatic_access:
+                    # Verify the credential at a protected endpoint rather than
+                    # reporting success merely because a code file exists.
+                    method, path, body = "GET", "/api/health", None
+            upstream.request(method, path, body=body, headers=headers)
             response = upstream.getresponse()
             data = response.read(MAX_RESPONSE + 1)
             if len(data) > MAX_RESPONSE:
                 return self.send_error(
                     502, "Upstream response exceeds the local bridge limit"
                 )
+            if automatic_access and response.status == 200:
+                data = json.dumps({"required": False, "authenticated": True}).encode()
+            elif parsed.path == "/api/health" and response.status == 200:
+                # This buffered bridge cannot forward an unbounded SSE response.
+                # Cloud media still goes directly through WebRTC; only control
+                # status uses the API's existing polling endpoint.
+                health = json.loads(data)
+                health["control_transport"] = "poll"
+                data = json.dumps(health).encode()
             self.reply(response.status, data, response.getheaders())
         except (OSError, http.client.HTTPException):
             self.send_error(
@@ -351,13 +382,27 @@ def main():
         default=PORT,
         help="HTTP bridge port when --upstream is supplied",
     )
+    parser.add_argument(
+        "--access-code-file",
+        type=Path,
+        help="Private code file for automatic access through the loopback bridge",
+    )
     args = parser.parse_args()
+    if args.access_code_file and not args.upstream:
+        parser.error("--access-code-file requires --upstream")
     if args.upstream:
         address, port = args.upstream.rsplit(":", 1)
         address, port = private_ip(address), int(port)
         if not (1024 <= args.port <= 65535 and 1024 <= port <= 65535):
             parser.error("Use ports between 1024 and 65535")
-        with Bridge(("127.0.0.1", args.port), (address, port)) as server:
+        access_token = ""
+        if args.access_code_file:
+            access_token = args.access_code_file.read_text(encoding="utf-8").strip()
+            if not access_token:
+                parser.error("The private access code file is empty")
+        with Bridge(
+            ("127.0.0.1", args.port), (address, port), access_token=access_token
+        ) as server:
             print(
                 f"Open http://127.0.0.1:{args.port}; forwarding to the private SSH route.",
                 flush=True,

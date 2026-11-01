@@ -23,6 +23,7 @@ async function startDiagnostic(page: import('@playwright/test').Page, waitForMed
   );
   await page.getByRole('button', { name: 'Start call' }).click();
   const session = await (await created).json();
+  expect(session.id, 'The diagnostic session must start before injecting a fault').toBeTruthy();
   await expect(page.getByRole('button', { name: 'End call' })).toBeVisible();
   // End is available during connection so users can cancel setup. Wait for
   // the actual media connection before injecting a control/autoplay fault.

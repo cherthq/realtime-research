@@ -10,7 +10,11 @@ from realtime.config import Settings
 
 def test_private_api_login_cookie_logout_and_cross_origin():
     module = importlib.import_module("realtime.app")
-    config = Settings(_env_file=None, demo_access_token=SecretStr("private-test-code"))
+    config = Settings(
+        avatar_catalog="research",
+        _env_file=None,
+        demo_access_token=SecretStr("private-test-code"),
+    )
     with TestClient(module.create_app(config)) as client:
         assert client.get("/api/access").json() == {
             "required": True,

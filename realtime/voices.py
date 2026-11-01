@@ -11,6 +11,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import re
 import time
 from pathlib import Path
 from typing import Literal
@@ -37,6 +38,20 @@ VOICES = frozenset(
     }
 )
 REVISION = "character-casting-v1"
+QWEN_VOICES = frozenset(
+    {
+        "aiden",
+        "ryan",
+        "serena",
+        "vivian",
+        "uncle_fu",
+        "dylan",
+        "eric",
+        "ono_anna",
+        "sohee",
+    }
+)
+VOICES = VOICES | QWEN_VOICES
 PREVIEW_TEXT = (
     "Hi there. I'm glad you're here. Take your time, and tell me what's on your mind."
 )
@@ -103,9 +118,72 @@ class VoiceService:
             await self.client.close()
 
     def profiles(self) -> list[dict]:
+        if self.settings.tts_provider == "elevenlabs":
+            if self.catalog.bundled:
+                # Stock IDs are public metadata. No private clone/profile files
+                # are consulted, and the demo works without a prepared asset pack.
+                return [
+                    {
+                        "id": p["voice_id"],
+                        "voice": p["voice_id"],
+                        "provider": "elevenlabs",
+                        "instructions": DELIVERY,
+                        "preview_available": False,
+                        "review": {
+                            "description": p["voice_note"],
+                            "presentation": "Stock voice",
+                        },
+                    }
+                    for p in {
+                        p["voice_id"]: p for p in self.catalog.portraits.values()
+                    }.values()
+                ]
+            voice = self.settings.elevenlabs_voice_id
+            if voice and not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", voice):
+                raise VoicePreparationError("Invalid ELEVENLABS_VOICE_ID")
+            result = (
+                [
+                    {
+                        "id": voice,
+                        "voice": voice,
+                        "provider": "elevenlabs",
+                        "instructions": DELIVERY,
+                        "preview_available": False,
+                        "review": {
+                            "description": "Configured ElevenLabs voice",
+                            "presentation": "Configured by host",
+                        },
+                    }
+                ]
+                if voice
+                else []
+            )
+            for path in sorted(self.root.glob("profiles/*.json")):
+                profile = json.loads(path.read_text(encoding="utf-8"))
+                if profile.get("provider") != "elevenlabs":
+                    continue
+                ident = profile.get("id", "")
+                if (
+                    not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", ident)
+                    or profile.get("voice") != ident
+                ):
+                    raise VoicePreparationError("Invalid prepared ElevenLabs voice")
+                preview = self.root / "previews" / f"{ident}.wav"
+                if not preview.is_file() or digest(preview.read_bytes()) != profile.get(
+                    "preview_sha256"
+                ):
+                    raise VoicePreparationError(
+                        "Voice preview missing or changed; prepare it again."
+                    )
+                VoiceReview.model_validate(profile["review"])
+                result = [p for p in result if p["id"] != ident]
+                result.append(profile)
+            return result
         result = []
         for path in sorted(self.root.glob("profiles/*.json")):
             profile = json.loads(path.read_text(encoding="utf-8"))
+            if profile.get("provider", "openai") != self.settings.tts_provider:
+                continue
             voice = profile.get("voice")
             preview = self.root / "previews" / f"{voice}.wav"
             if voice not in VOICES or profile.get("id") != voice:
@@ -123,7 +201,13 @@ class VoiceService:
         return result
 
     def preview(self, profile_id: str) -> Path:
-        self.profile(profile_id)
+        profile = self.profile(profile_id)
+        if self.settings.tts_provider == "elevenlabs" and not profile.get(
+            "preview_available"
+        ):
+            raise VoicePreparationError(
+                "Preview this configured voice in ElevenLabs before calling."
+            )
         return self.root / "previews" / f"{profile_id}.wav"
 
     def profile(self, profile_id: str) -> dict:
@@ -135,20 +219,44 @@ class VoiceService:
         )
 
     async def prepare(self, voice: str, *, replace: bool = False) -> dict:
-        if voice not in VOICES:
+        allowed = (
+            QWEN_VOICES
+            if self.settings.tts_provider == "qwen"
+            else VOICES - QWEN_VOICES
+        )
+        if voice not in allowed:
             raise VoicePreparationError("Unsupported Realtime voice.")
         async with self.lock:
             path = self.root / "profiles" / f"{voice}.json"
             if path.exists() and not replace:
                 return self.profile(voice)
             client = self._client()
-            speech = await synthesize_script(
-                client,
-                self.settings.openai_realtime_model,
-                voice,
-                PREVIEW_TEXT,
-                DELIVERY,
-            )
+            if self.settings.tts_provider == "qwen":
+                from .qwen_client import QwenTTSClient
+                from .speech import wav_bytes
+
+                tts = QwenTTSClient(self.settings)
+                try:
+                    await tts.warm()
+                    chunks = [
+                        pcm async for pcm in tts.stream(PREVIEW_TEXT, voice, DELIVERY)
+                    ]
+                finally:
+                    await tts.close()
+                pcm = b"".join(chunks)
+                speech = {
+                    "wav": wav_bytes(pcm),
+                    "pcm": pcm,
+                    "resolved_model": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+                }
+            else:
+                speech = await synthesize_script(
+                    client,
+                    self.settings.openai_realtime_model,
+                    voice,
+                    PREVIEW_TEXT,
+                    DELIVERY,
+                )
             audio = speech["wav"]
             # Review actual sound; names are never used to infer vocal presentation.
             review = await describe_voice(
@@ -173,7 +281,7 @@ class VoiceService:
             profile = {
                 "id": voice,
                 "voice": voice,
-                "provider": "openai",
+                "provider": self.settings.tts_provider,
                 "revision": 1,
                 "instructions": DELIVERY,
                 "preview_text": PREVIEW_TEXT,
@@ -202,6 +310,21 @@ class VoiceService:
     def saved(self, avatar_id: str) -> dict | None:
         if avatar_id not in self.catalog.portraits:
             raise KeyError(avatar_id)
+        if self.settings.tts_provider == "elevenlabs":
+            portrait = self.catalog.portraits[avatar_id]
+            voice = portrait.get("elevenlabs_voice_id")
+            if not voice:
+                return None
+            self.profile(voice)
+            valid = digest(self.catalog.image(avatar_id).read_bytes()) == portrait.get(
+                "image_sha256"
+            )
+            return {
+                "status": "matched" if valid else "needs_recast",
+                "voice_profile_id": voice,
+                "description": portrait.get("voice_note", "Curated stock voice"),
+                "mode": "curated_stock_voice",
+            }
         path = self.root / "assignments" / f"{avatar_id}.json"
         if not path.exists():
             return None
@@ -214,6 +337,10 @@ class VoiceService:
     async def cast(
         self, avatar_id: str, *, preference: str = "", recast: bool = False
     ) -> dict:
+        if self.settings.tts_provider == "elevenlabs":
+            raise VoicePreparationError(
+                "Choose a prepared stock voice or use this avatar's saved assignment. Automatic image casting is not enabled for ElevenLabs."
+            )
         async with self.lock:
             previous = self.saved(avatar_id)
             if previous and not recast:
@@ -315,6 +442,26 @@ class VoiceService:
         self, avatar_id: str, override: str | None = None
     ) -> dict:
         started = time.monotonic()
+        if self.settings.tts_provider == "elevenlabs":
+            saved = self.saved(avatar_id) if not override else None
+            if saved and saved["status"] != "matched":
+                raise VoicePreparationError(
+                    "Portrait changed; reassign its voice or choose an explicit override."
+                )
+            voice = override or (
+                saved["voice_profile_id"]
+                if saved
+                else self.settings.elevenlabs_voice_id
+            )
+            return {
+                "profile": self.profile(voice),
+                "mode": "explicit_override"
+                if override
+                else "curated_stock_voice"
+                if saved
+                else "configured_voice",
+                "preparation_ms": 0,
+            }
         if not override and self.saved(avatar_id) is None:
             # Only a first match is automatic. Changed inputs still require an
             # explicit recast; an existing character voice never silently changes.

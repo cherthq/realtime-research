@@ -1,8 +1,9 @@
-"""Prepare and supervise a private single-host demo, or forward it over SSH.
+"""Prepare and supervise a private demo with local or Cloud LiveKit.
 
 This does not launch/terminate a cloud instance or alter its firewall. Keep the
-three service ports closed to public ingress; only SSH is needed for team use.
-LiveKit's TCP media listener binds all interfaces even with HTTP bound locally.
+application bound locally and use SSH for remote access. Local LiveKit mode also
+forwards signaling/media; Cloud mode connects media directly to the project.
+The local LiveKit TCP listener binds all interfaces even with HTTP bound locally.
 """
 
 from __future__ import annotations
@@ -24,8 +25,9 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
-from realtime.config import ROOT
+from realtime.config import ROOT, Settings
 from realtime.scripts.livekit_local import install
 
 DEFAULT = ROOT / ".cache/realtime-host"
@@ -132,7 +134,7 @@ def load(directory: Path):
     return profile
 
 
-def environment(profile: dict):
+def environment(profile: dict, *, livekit_cloud=False):
     env = {
         **os.environ,
         "LIVEKIT_URL": f"ws://127.0.0.1:{profile['signal_port']}",
@@ -145,6 +147,31 @@ def environment(profile: dict):
         env.update(
             LIVEKIT_BROWSER_URL=f"ws://{private_client_address(profile['client_address'])}:{profile['signal_port']}",
             CONTROL_TRANSPORT="poll",
+        )
+    if livekit_cloud:
+        settings = Settings()
+        url = urlsplit(settings.livekit_url)
+        if (
+            url.scheme != "wss"
+            or not url.hostname
+            or not url.hostname.endswith(".livekit.cloud")
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+            or url.path not in ("", "/")
+            or settings.livekit_api_key in ("", "devkey")
+            or settings.livekit_api_secret.get_secret_value() in ("", "secret")
+        ):
+            raise ValueError(
+                "Configure LIVEKIT_URL with your wss:// project URL and private "
+                "LIVEKIT_API_KEY/LIVEKIT_API_SECRET before using --livekit-cloud"
+            )
+        env.update(
+            LIVEKIT_URL=settings.livekit_url,
+            LIVEKIT_BROWSER_URL=settings.livekit_url,
+            LIVEKIT_API_KEY=settings.livekit_api_key,
+            LIVEKIT_API_SECRET=settings.livekit_api_secret.get_secret_value(),
         )
     return env
 
@@ -202,8 +229,9 @@ def stop(child):
             child.wait(timeout=5)
 
 
-def serve(directory: Path):
+def serve(directory: Path, *, livekit_cloud=False):
     profile = load(directory)
+    app_environment = environment(profile, livekit_cloud=livekit_cloud)
     if not (ROOT / "realtime/web/dist/index.html").is_file():
         raise RuntimeError(
             "Build the web application with npm ci and npm run build first"
@@ -211,17 +239,24 @@ def serve(directory: Path):
     # Bind checks happen before starting either service. Never stop an existing
     # server to reclaim a port, and never interpret a stale PID file as ownership.
     with ExitStack() as stack:
-        for port in ports(
-            profile["api_port"], profile["signal_port"], profile["media_port"]
-        ):
+        listeners = (
+            (profile["api_port"],)
+            if livekit_cloud
+            else ports(
+                profile["api_port"], profile["signal_port"], profile["media_port"]
+            )
+        )
+        for port in listeners:
             probe = stack.enter_context(socket.socket())
             # Linux TIME_WAIT sockets from a clean shutdown must not prevent a
             # restart. This still rejects a listener already owning the port.
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind(("127.0.0.1", port))
-    binary = install()
+    binary = None if livekit_cloud else install()
     print(
-        "Private demo: keep API, signaling and media ports blocked to public ingress; forward them over SSH.",
+        "LiveKit Cloud media; application stays on loopback. Forward only the API port over SSH."
+        if livekit_cloud
+        else "Private demo: keep API, signaling and media ports blocked to public ingress; forward them over SSH.",
         flush=True,
     )
     print(
@@ -240,15 +275,20 @@ def serve(directory: Path):
     }
     try:
         with ExitStack() as stack:
-            media_log = stack.enter_context((directory / "livekit.log").open("ab"))
             api_log = stack.enter_context((directory / "app.log").open("ab"))
-            media = subprocess.Popen(
-                [str(binary), "--config", str((directory / "livekit.yaml").resolve())],
-                stdout=media_log,
-                stderr=subprocess.STDOUT,
-            )
-            children.append(media)
-            wait_http(profile["signal_port"], "/", media)
+            if not livekit_cloud:
+                media_log = stack.enter_context((directory / "livekit.log").open("ab"))
+                media = subprocess.Popen(
+                    [
+                        str(binary),
+                        "--config",
+                        str((directory / "livekit.yaml").resolve()),
+                    ],
+                    stdout=media_log,
+                    stderr=subprocess.STDOUT,
+                )
+                children.append(media)
+                wait_http(profile["signal_port"], "/", media)
             app = subprocess.Popen(
                 [
                     sys.executable,
@@ -264,7 +304,7 @@ def serve(directory: Path):
                     "--no-access-log",
                 ],
                 cwd=ROOT,
-                env=environment(profile),
+                env=app_environment,
                 stdout=api_log,
                 stderr=subprocess.STDOUT,
             )
@@ -277,7 +317,7 @@ def serve(directory: Path):
             while running:
                 if any(child.poll() is not None for child in children):
                     raise RuntimeError(
-                        "A service exited; inspect app.log and livekit.log"
+                        "A service exited; inspect the service logs in the profile directory"
                     )
                 time.sleep(0.2)
     finally:
@@ -287,10 +327,10 @@ def serve(directory: Path):
             signal.signal(sig, handler)
 
 
-def warm(directory: Path, portrait="ref01", timeout=900):
+def warm(directory: Path, portrait="call01", timeout=900):
     """Load/compile an idle host's model without recording or starting voice."""
     if (
-        portrait not in {"ref01", "ref02", "ref03"}
+        not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", portrait)
         or not math.isfinite(timeout)
         or not 0 < timeout <= 1800
     ):
@@ -344,10 +384,14 @@ def main():
     for name in ("prepare", "serve", "check", "warm"):
         p = sub.add_parser(name)
         p.add_argument("--directory", type=Path, default=DEFAULT)
-        if name == "warm":
+        if name == "serve":
             p.add_argument(
-                "--portrait", choices=["ref01", "ref02", "ref03"], default="ref01"
+                "--livekit-cloud",
+                action="store_true",
+                help="Use private LIVEKIT_* settings; do not launch a local media server",
             )
+        if name == "warm":
+            p.add_argument("--portrait", default="call01")
             p.add_argument("--timeout", type=float, default=900)
         if name == "prepare":
             p.add_argument(
@@ -396,7 +440,7 @@ def main():
             "Profile valid. This does not verify the cloud firewall, GPU, OpenAI access, or media delivery."
         )
     elif args.command == "serve":
-        serve(args.directory)
+        serve(args.directory, livekit_cloud=args.livekit_cloud)
     elif args.command == "warm":
         print(json.dumps(warm(args.directory, args.portrait, args.timeout), indent=2))
     else:

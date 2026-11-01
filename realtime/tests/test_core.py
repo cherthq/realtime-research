@@ -42,12 +42,20 @@ def test_bound_and_geometry_are_enforced():
 
 
 def test_sync_fixture_has_known_silence_and_tone_windows():
-    samples = Catalog(Settings()).audio("sync_marker")
+    samples = Catalog(
+        Settings(
+            avatar_catalog="research",
+        )
+    ).audio("sync_marker")
     assert len(samples) == 4 * 48_000
     assert not np.any(samples[:24_960])
     assert np.max(np.abs(samples[24_960:29_760])) > 6000
     assert not np.any(samples[29_760:96_000])
-    continuous = Catalog(Settings()).audio("interrupt_marker")
+    continuous = Catalog(
+        Settings(
+            avatar_catalog="research",
+        )
+    ).audio("interrupt_marker")
     assert len(continuous) == 4 * 48_000
     assert np.all(np.max(np.abs(continuous.reshape(-1, 1920)), axis=1) > 6000)
 
@@ -88,7 +96,13 @@ def client(monkeypatch):
         return None
 
     monkeypatch.setattr(module, "delete_room", delete)
-    with TestClient(module.create_app(Settings())) as client:
+    with TestClient(
+        module.create_app(
+            Settings(
+                avatar_catalog="research",
+            )
+        )
+    ) as client:
         yield client
 
 
@@ -203,7 +217,9 @@ def test_cancelled_end_request_keeps_lease_until_cleanup_finishes(
         monkeypatch.setattr(module, "DemoWorker", SlowWorker)
         monkeypatch.setattr(module, "delete_room", delete)
         monkeypatch.setattr(module, "ROOT", tmp_path)
-        config = Settings()
+        config = Settings(
+            avatar_catalog="research",
+        )
         manager = module.SessionManager(config, Catalog(config))
         session = await manager.create("ref01")
         request = asyncio.create_task(manager.close(session))
@@ -247,6 +263,10 @@ def test_worker_teardown_survives_request_cancellation_and_queue_error():
         # Exercise ownership without initializing native resources or a GPU.
         worker = DemoWorker.__new__(DemoWorker)
         worker.id, worker.closed, worker._closing = "cleanup-test", False, None
+        worker.camera = SimpleNamespace(close=AsyncMock())
+        from realtime.transcripts import TranscriptLedger
+
+        worker.transcripts = TranscriptLedger()
         worker.buffer = ResponseBuffer()
         worker.sync = SimpleNamespace(
             clear_queue=AsyncMock(side_effect=RuntimeError("queue failure")),
@@ -259,6 +279,7 @@ def test_worker_teardown_survives_request_cancellation_and_queue_error():
             None,
         )
         worker.control_task = None
+        worker.caption_task = None
         worker.gpu_pool = SimpleNamespace(release=AsyncMock(side_effect=release_gpu))
         worker.mic_tasks = set()
         worker.room = SimpleNamespace(disconnect=AsyncMock())

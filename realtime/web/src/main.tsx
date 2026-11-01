@@ -4,6 +4,10 @@ import { Room, RoomEvent, RemoteAudioTrack, RemoteVideoTrack } from 'livekit-cli
 import MetadataWorker from 'livekit-client/frame-metadata-worker?worker';
 import { useCamera } from './useCamera';
 import { BrowserPlayback } from './playback';
+import { Conversation } from './Conversation';
+import { LiveCaptions } from './LiveCaptions';
+import { DeviceSettings } from './DeviceSettings';
+import { useTranscripts } from './useTranscripts';
 import './style.css';
 
 type Avatar = {
@@ -13,20 +17,33 @@ type Avatar = {
   image_available: boolean;
   casting_status: string;
   voice_profile_id?: string;
+  voice_note?: string;
+  note?: string;
 };
-type Voice = { id: string; review: { description: string; presentation: string } };
+type Voice = {
+  id: string;
+  name?: string;
+  preview_available?: boolean;
+  review: { description: string; presentation: string };
+};
 type AvatarModel = { id: string; name: string; available: boolean; description: string };
 type Scenario = { id: string; title: string; text: string; available: boolean };
 type Health = {
+  geometry?: { width: number; height: number; fps: number; publish_fps: number };
   livekit: boolean;
   openai_configured: boolean;
   active_session: boolean;
   control_transport?: 'sse' | 'poll';
+  ui_asset?: string | null;
+  camera_vision?: boolean;
+  tts_provider?: string;
+  tts_configured?: boolean;
 };
 type Metrics = {
   state: string;
   elapsed_seconds: number;
   transport_fps: number;
+  video_max_fps?: number;
   frames_published: number;
   audio_queue_ms: number;
   first_media_ms: number | null;
@@ -38,6 +55,14 @@ type Metrics = {
   model_generation_fps?: number | null;
   generated_frames?: number;
   held_frames?: number;
+  idle_motion_frames?: number;
+  continuous_motion?: boolean;
+  video_delayed?: boolean;
+  avatar_timing?: {
+    first_audio_to_gpu_request_ms: number | null;
+    first_chunk_roundtrip_ms: number | null;
+    decoded_to_publish_ms: number | null;
+  };
   render_stalls?: number;
   distinct_generated_frames?: number;
   exact_duplicate_frames?: number;
@@ -102,7 +127,19 @@ function Brand() {
 function Icon({
   name,
 }: {
-  name: 'phone' | 'mic' | 'mute' | 'stop' | 'play' | 'camera' | 'cameraOff' | 'settings' | 'close';
+  name:
+    | 'phone'
+    | 'mic'
+    | 'mute'
+    | 'stop'
+    | 'play'
+    | 'camera'
+    | 'cameraOff'
+    | 'settings'
+    | 'close'
+    | 'captions'
+    | 'history'
+    | 'clock';
 }) {
   const paths: Record<string, React.ReactNode> = {
     phone: (
@@ -137,6 +174,24 @@ function Icon({
         <path d="M4 7h16M4 17h16" />
         <circle cx="9" cy="7" r="3" fill="currentColor" />
         <circle cx="15" cy="17" r="3" fill="currentColor" />
+      </>
+    ),
+    captions: (
+      <>
+        <rect x="3" y="5" width="18" height="14" rx="3" />
+        <path d="M10 10H7v4h3m7-4h-3v4h3" />
+      </>
+    ),
+    history: (
+      <>
+        <path d="M8 20 3 22V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H8Z" />
+        <path d="M7 9h10M7 14h6" />
+      </>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
       </>
     ),
     close: <path d="m6 6 12 12M18 6 6 18" />,
@@ -225,7 +280,7 @@ function AccessGate() {
 function App({ onLock }: { onLock?: () => Promise<void> }) {
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [cases, setCases] = useState<Scenario[]>([]);
-  const [avatarId, setAvatarId] = useState('ref01');
+  const [avatarId, setAvatarId] = useState('call01');
   const [health, setHealth] = useState<Health | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
@@ -233,6 +288,7 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
   const [mic, setMic] = useState(false);
   const [soundBlocked, setSoundBlocked] = useState(false);
   const [hasVideo, setHasVideo] = useState(false);
+  const [deliveryDelayed, setDeliveryDelayed] = useState(false);
   const [error, setError] = useState('');
   const [caseId, setCaseId] = useState('s01_greeting');
   const [controlInterrupted, setControlInterrupted] = useState(false);
@@ -255,8 +311,39 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
   const stopping = useRef(false);
   const startAttempt = useRef(0);
   const preferences = useRef<HTMLDialogElement>(null);
-  const camera = useCamera();
+  const history = useRef<HTMLDialogElement>(null);
+  const [showCaptions, setShowCaptions] = useState(true);
+  const [showTimer, setShowTimer] = useState(true);
+  const [cameraLarge, setCameraLarge] = useState(false);
+  const [inputDevice, setInputDevice] = useState('');
+  const [outputDevice, setOutputDevice] = useState('');
+  const [cameraRoom, setCameraRoom] = useState<Room | null>(null);
+  const [captionRoom, setCaptionRoom] = useState<Room | null>(null);
+  const videoHold = useRef<HTMLCanvasElement>(null);
+  const camera = useCamera(cameraRoom);
+  const captions = useTranscripts(session, health?.control_transport === 'poll', captionRoom);
   const avatar = avatars.find((a) => a.id === avatarId);
+  const defaultVoice =
+    voices.find((voice) => voice.id === avatar?.voice_profile_id) ||
+    (health?.tts_provider === 'elevenlabs' && !avatar?.voice_profile_id ? voices[0] : undefined);
+  const selectedVoice = voiceId ? voices.find((voice) => voice.id === voiceId) : defaultVoice;
+  function selectAvatar(id: string) {
+    previewAudio.current?.pause();
+    setAvatarId(id);
+    setVoiceId('');
+  }
+
+  useEffect(() => {
+    if (!session) {
+      setDeliveryDelayed(false);
+      return;
+    }
+    const timer = setInterval(
+      () => setDeliveryDelayed(playback.current?.videoDelayed ?? false),
+      250,
+    );
+    return () => clearInterval(timer);
+  }, [session?.id]);
 
   useEffect(() => {
     Promise.all([
@@ -268,6 +355,9 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
     ])
       .then(([a, c, h, v, m]) => {
         setAvatars(a);
+        setAvatarId((selected) =>
+          a.some((avatar) => avatar.id === selected) ? selected : (a[0]?.id ?? ''),
+        );
         setCases(c);
         setHealth(h);
         setVoices(v);
@@ -430,6 +520,10 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
       const sound = new AudioContext({ latencyHint: 'interactive' });
       audioContext.current = sound;
       void sound.resume().catch(() => setSoundBlocked(true));
+      if (outputDevice)
+        await (sound as AudioContext & { setSinkId: (id: string) => Promise<void> }).setSinkId(
+          outputDevice,
+        );
       const s = await api<Session>('/sessions', {
         method: 'POST',
         body: JSON.stringify({
@@ -463,13 +557,16 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
             { method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(2000) },
             s.session_key,
           ),
-        setHasVideo,
+        (visible) => {
+          if (current.current?.id === s.id) setHasVideo(visible);
+        },
         () => setSoundBlocked(true),
         (message) => {
           setError(message);
           void stop();
         },
         sound,
+        s.metrics.continuous_motion === true,
       );
       playback.current = control;
       const r = new Room({
@@ -478,6 +575,7 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
         webAudioMix: { audioContext: sound },
         frameMetadata: { worker: metadata },
         audioCaptureDefaults: {
+          ...(inputDevice ? { deviceId: { exact: inputDevice } } : {}),
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
@@ -488,8 +586,7 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
         if (participant.identity !== 'avatar') return;
         if (track instanceof RemoteVideoTrack && video.current) {
           track.attach(video.current);
-          control.attachVideo(track, video.current);
-          setHasVideo(true);
+          control.attachVideo(track, video.current, videoHold.current ?? undefined);
         }
         if (track instanceof RemoteAudioTrack && audio.current) {
           const el = control.attachAudio(track);
@@ -541,6 +638,7 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
         return;
       }
       await r.startAudio().catch(() => setSoundBlocked(true));
+      setCaptionRoom(r);
       if (attempt !== startAttempt.current || current.current?.id !== s.id) {
         await r.disconnect();
         return;
@@ -548,7 +646,14 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
       const controller = new AbortController();
       updates.current = controller;
       void observe(s, controller.signal);
+      if (s.metrics.continuous_motion) {
+        // Keep setup pending until listening video is actually being presented.
+        // Do not enable the microphone against a static reference portrait.
+        await control.waitForVideo();
+        if (attempt !== startAttempt.current || current.current?.id !== s.id) return;
+      }
       if (mode === 'voice_diagnostic') {
+        if (health?.camera_vision) setCameraRoom(r);
         try {
           await r.localParticipant.setMicrophoneEnabled(true);
           if (current.current?.id === s.id) setMic(true);
@@ -574,6 +679,8 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
     startAttempt.current++;
     stopping.current = true;
     setPending(true);
+    setCameraRoom(null);
+    setCaptionRoom(null);
     camera.stop();
     playback.current?.close();
     playback.current = null;
@@ -673,12 +780,30 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
   }
 
   function previewVoice() {
-    const id = voiceId || avatar?.voice_profile_id;
+    const id = selectedVoice?.id;
     if (!id) return;
     previewAudio.current?.pause();
     const preview = new Audio('/api/voices/' + encodeURIComponent(id) + '/preview');
     previewAudio.current = preview;
     void preview.play().catch(() => setError('Voice preview could not play.'));
+  }
+
+  async function selectDevice(kind: MediaDeviceKind, id: string) {
+    if (kind === 'videoinput') {
+      await camera.selectDevice(id);
+    } else if (kind === 'audioinput') {
+      if (room.current && !(await room.current.switchActiveDevice(kind, id || 'default'))) {
+        throw new Error('Microphone switch failed');
+      }
+      setInputDevice(id);
+    } else {
+      // Playback uses Web Audio. Switch that destination, not only the <audio> element.
+      const context = audioContext.current as
+        | (AudioContext & { setSinkId: (id: string) => Promise<void> })
+        | null;
+      if (context) await context.setSinkId(id);
+      setOutputDevice(id);
+    }
   }
 
   const elapsed = session ? (metrics?.elapsed_seconds ?? 0) : 0;
@@ -697,25 +822,20 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
         ? 'Reconnecting…'
         : metrics?.state === 'responding'
           ? 'Speaking'
-          : metrics?.state === 'buffering'
-            ? 'Thinking…'
-            : 'Connected';
+          : captions.checking
+            ? 'Checking…'
+            : metrics?.state === 'buffering'
+              ? 'Thinking…'
+              : 'Connected';
   const locked = !!session || pending;
+  const updateAvailable =
+    !import.meta.env.DEV &&
+    !!health?.ui_asset &&
+    health.ui_asset !== new URL(import.meta.url).pathname;
 
   return (
     <main className="call-page">
-      <header className="call-header">
-        <Brand />
-        <div className="call-status" role="status">
-          <span className={`status-dot ${session ? 'connected' : ''}`} />
-          {state}
-          {session && <time>{duration}</time>}
-        </div>
-        <button className="settings-button" onClick={() => preferences.current?.showModal()}>
-          <Icon name="settings" />
-          Settings
-        </button>
-      </header>
+      <h1 className="sr-only">Chert video call</h1>
 
       {error && (
         <div role="alert" className="error-message">
@@ -730,134 +850,260 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
           Connection interrupted. Playback is paused while reconnecting…
         </div>
       )}
+      {updateAvailable && (
+        <div role="status" className="error-message">
+          <span>
+            {session
+              ? 'An update is ready. End this call, then reload.'
+              : 'An update is ready. Reload before starting a call.'}
+          </span>
+          {!session && <button onClick={() => window.location.reload()}>Reload</button>}
+        </div>
+      )}
 
-      <section className="video-pair" aria-label="Video call">
-        <div className="video-tile local-tile">
+      <section
+        className={`video-pair ${cameraLarge ? 'camera-large' : 'avatar-large'}`}
+        aria-label="Video call"
+      >
+        <div className={`video-tile local-tile ${cameraLarge ? 'large-tile' : 'small-tile'}`}>
           <video
             ref={camera.video}
             autoPlay
             playsInline
             muted
+            width={640}
+            height={480}
             className={`local-video ${camera.enabled ? 'visible' : ''}`}
             aria-label="Your camera"
           />
           {!camera.enabled && (
             <div className="camera-placeholder">
               <Icon name="cameraOff" />
-              <p>{camera.pending ? 'Waiting for camera permission…' : 'Your camera is off'}</p>
-              <button onClick={() => void camera.toggle()} disabled={camera.pending}>
-                Turn on camera
-              </button>
-              {camera.error && (
-                <span role="alert" className="camera-error">
-                  {camera.error}
-                </span>
-              )}
+              <p>{camera.pending ? 'Allow camera access' : 'Camera off'}</p>
             </div>
+          )}
+          {!cameraLarge && (
+            <button
+              className="swap-view"
+              onClick={() => setCameraLarge(true)}
+              aria-label="Make your camera large"
+              title="Make your camera large"
+            >
+              <span className="swap-hint">Enlarge ↗</span>
+            </button>
           )}
           <div className="tile-caption">
             <span>You</span>
-            <span className="tile-detail">{camera.enabled ? 'Local preview' : 'Camera off'}</span>
+            <span className="tile-detail">
+              {camera.shared ? 'Shared with AI' : camera.enabled ? 'Local preview' : 'Camera off'}
+            </span>
           </div>
         </div>
-        <div className="video-tile avatar-tile">
-          {avatar?.image_available && (
-            <img className="avatar-image" src={avatar.image_url} alt="Avatar reference" />
+        <div className={`video-tile avatar-tile ${cameraLarge ? 'small-tile' : 'large-tile'}`}>
+          {!hasVideo && !session && !pending && avatar?.image_available && (
+            <img
+              className="avatar-image"
+              src={avatar.image_url}
+              alt="Avatar reference"
+              width={640}
+              height={480}
+              fetchPriority="high"
+            />
           )}
           <video
             ref={video}
             autoPlay
             playsInline
             muted
+            width={640}
+            height={480}
             className={hasVideo ? 'visible' : ''}
             aria-label="Generated avatar"
+          />
+          <canvas
+            ref={videoHold}
+            className="avatar-hold"
+            width={640}
+            height={480}
+            hidden
+            aria-hidden="true"
           />
           {!avatar?.image_available && !hasVideo && (
             <div className="camera-placeholder">
               <p>Avatar unavailable</p>
             </div>
           )}
-          <div className="tile-caption">
-            <span>Avatar</span>
-            <span className="tile-detail">
-              {modelId === 'mock' ? 'Preview' : session ? 'AI generated' : 'Reference'}
-            </span>
+          {!hasVideo && avatar?.image_available && (session || pending) && (
+            <div className="camera-placeholder" role="status" aria-label="Avatar starting">
+              <p>Connecting avatar…</p>
+            </div>
+          )}
+          {cameraLarge && (
+            <button
+              className="swap-view"
+              onClick={() => setCameraLarge(false)}
+              aria-label="Make the AI video large"
+              title="Make the AI video large"
+            >
+              <span className="swap-hint">Enlarge ↗</span>
+            </button>
+          )}
+          <div className="stage-brand">
+            <Brand />
           </div>
+          {session && hasVideo && (metrics?.video_delayed || deliveryDelayed) && (
+            <span className="video-delay" role="status">
+              Video delayed
+            </span>
+          )}
+        </div>
+        <div className="stage-overlay">
+          <header className="stage-header">
+            <div className="call-status">
+              <span className={`status-dot ${session ? 'connected' : ''}`} />
+              <span role="status">{state}</span>
+              {showTimer && session && <time aria-label="Call duration">{duration}</time>}
+            </div>
+          </header>
+          <LiveCaptions
+            utterances={captions.utterances}
+            reconnecting={captions.reconnecting}
+            active={!!session}
+            enabled={showCaptions}
+          />
         </div>
       </section>
       <div ref={audio} className="audio-container" />
 
-      <div className="call-controls" aria-label="Call controls">
-        <button
-          className={`icon-control ${camera.enabled ? 'active' : ''}`}
-          onClick={() => void camera.toggle()}
-          aria-label={
-            camera.pending
-              ? 'Cancel camera request'
-              : camera.enabled
-                ? 'Turn camera off'
-                : 'Turn camera on'
-          }
-          title={
-            camera.pending
-              ? 'Cancel camera request'
-              : camera.enabled
-                ? 'Turn camera off'
-                : 'Turn camera on'
-          }
-          aria-pressed={camera.enabled}
-        >
-          <Icon name={camera.enabled ? 'camera' : 'cameraOff'} />
-        </button>
-        <button
-          className={`icon-control ${mic ? 'active' : ''}`}
-          disabled={!session || pending}
-          onClick={() => void toggleMic()}
-          aria-label={mic ? 'Mute microphone' : 'Enable microphone'}
-          title={mic ? 'Mute microphone' : 'Enable microphone'}
-          aria-pressed={mic}
-        >
-          <Icon name={mic ? 'mic' : 'mute'} />
-        </button>
-        {session ? (
-          <button className="call-button end-call" onClick={() => void stop()}>
-            <Icon name="phone" />
-            End call
-          </button>
-        ) : (
+      <footer className="call-footer">
+        <div className="call-controls" role="group" aria-label="Call controls">
           <button
-            className="call-button"
-            disabled={pending || !health?.livekit || !avatar?.image_available}
-            onClick={() => void start()}
+            className={`icon-control ${camera.enabled ? 'active' : ''}`}
+            onClick={() => void camera.toggle()}
+            aria-label={
+              camera.pending
+                ? 'Cancel camera request'
+                : camera.enabled
+                  ? 'Turn camera off'
+                  : 'Turn camera on'
+            }
+            title={
+              camera.pending
+                ? 'Cancel camera request'
+                : camera.enabled
+                  ? 'Turn camera off'
+                  : 'Turn camera on'
+            }
+            aria-pressed={camera.enabled}
           >
-            <Icon name="phone" />
-            {pending ? 'Connecting…' : 'Start call'}
+            <Icon name={camera.enabled ? 'camera' : 'cameraOff'} />
           </button>
-        )}
-        {session && (
+          <button
+            className={`icon-control ${mic ? 'active' : ''}`}
+            disabled={!session || pending}
+            onClick={() => void toggleMic()}
+            aria-label={mic ? 'Mute microphone' : 'Enable microphone'}
+            title={mic ? 'Mute microphone' : 'Enable microphone'}
+            aria-pressed={mic}
+          >
+            <Icon name={mic ? 'mic' : 'mute'} />
+          </button>
+          <button
+            className={`icon-control ${showCaptions ? 'active' : ''}`}
+            onClick={() => setShowCaptions(!showCaptions)}
+            aria-label="Captions"
+            title="Captions"
+            aria-pressed={showCaptions}
+          >
+            <Icon name="captions" />
+          </button>
           <button
             className="icon-control"
-            onClick={() => void interrupt()}
-            aria-label="Interrupt"
-            title="Interrupt"
+            onClick={() => history.current?.showModal()}
+            aria-label="Conversation history"
+            title="Conversation history"
+            aria-haspopup="dialog"
           >
-            <Icon name="stop" />
+            <Icon name="history" />
+          </button>
+          <button
+            className="icon-control"
+            onClick={() => preferences.current?.showModal()}
+            aria-label="Settings"
+            title="Settings"
+            aria-haspopup="dialog"
+          >
+            <Icon name="settings" />
+          </button>
+          {session ? (
+            <button
+              className="call-button end-call"
+              onClick={() => void stop()}
+              aria-label="End call"
+              title="End call"
+            >
+              <Icon name="phone" />
+            </button>
+          ) : (
+            <button
+              className="call-button"
+              disabled={pending || !health?.livekit || !avatar?.image_available || updateAvailable}
+              onClick={() => void start()}
+              aria-label={pending ? 'Connecting…' : 'Start call'}
+              title="Start call"
+            >
+              <Icon name="phone" />
+              <span className="start-label">{pending ? 'Connecting…' : 'Start call'}</span>
+            </button>
+          )}
+        </div>
+        {soundBlocked && (
+          <button
+            className="enable-sound"
+            onClick={() => void room.current?.startAudio().then(() => setSoundBlocked(false))}
+          >
+            Enable sound
           </button>
         )}
-      </div>
-      {soundBlocked && (
-        <button
-          className="enable-sound"
-          onClick={() => void room.current?.startAudio().then(() => setSoundBlocked(false))}
-        >
-          Enable sound
-        </button>
-      )}
-      <p className="call-note">
-        {modelId === 'mock'
-          ? 'Preview mode · avatar generation is not connected.'
-          : 'Experimental avatar · AI-generated voice and video.'}
-      </p>
+        <p className="call-note">
+          {modelId === 'mock'
+            ? 'Preview · No avatar model connected.'
+            : 'AI-generated voice and video.'}
+        </p>
+        {camera.error && (
+          <p className="camera-sharing-error" role="status">
+            {camera.error}
+          </p>
+        )}
+      </footer>
+
+      <dialog
+        ref={history}
+        className="history-dialog"
+        aria-labelledby="history-title"
+        onClick={(event) => {
+          if (event.target === history.current) history.current.close();
+        }}
+      >
+        <div className="dialog-content">
+          <header className="dialog-header">
+            <h2 id="history-title">Your conversation</h2>
+            <button
+              className="icon-control"
+              aria-label="Close conversation"
+              onClick={() => history.current?.close()}
+            >
+              <Icon name="close" />
+            </button>
+          </header>
+          <Conversation
+            utterances={captions.utterances}
+            checking={captions.checking}
+            active={!!session}
+            reconnecting={captions.reconnecting}
+          />
+        </div>
+      </dialog>
 
       <dialog
         ref={preferences}
@@ -869,7 +1115,7 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
       >
         <div className="dialog-content">
           <header className="dialog-header">
-            <h1 id="settings-title">Call settings</h1>
+            <h2 id="settings-title">Call settings</h2>
             <button
               className="icon-control"
               onClick={() => preferences.current?.close()}
@@ -878,115 +1124,211 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
               <Icon name="close" />
             </button>
           </header>
-          <fieldset disabled={locked}>
-            <legend>Avatar</legend>
-            <div className="avatar-choices">
-              {avatars.map((item, index) => (
-                <button
-                  key={item.id}
-                  className={avatarId === item.id ? 'selected' : ''}
-                  onClick={() => setAvatarId(item.id)}
-                  aria-label={`Select ${item.name}`}
-                  aria-pressed={avatarId === item.id}
-                >
-                  {item.image_available && <img src={item.image_url} alt="" />}
-                  <span>{String(index + 1).padStart(2, '0')}</span>
-                </button>
-              ))}
-            </div>
-            <label htmlFor="model">Model</label>
-            <select id="model" value={modelId} onChange={(event) => setModelId(event.target.value)}>
-              {models.map((item) => (
-                <option key={item.id} value={item.id} disabled={!item.available}>
-                  {item.name}
-                  {!item.available ? ' · unavailable' : ''}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="mode">Conversation</label>
-            <select id="mode" value={mode} onChange={(event) => setMode(event.target.value)}>
-              <option value="diagnostic">Test audio</option>
-              <option value="voice_diagnostic" disabled={!health?.openai_configured}>
-                Live voice
-              </option>
-            </select>
-            {!health?.openai_configured && (
-              <p className="field-note">Add your OpenAI key on the server to enable live voice.</p>
-            )}
-            <label htmlFor="voice">Voice</label>
-            <select id="voice" value={voiceId} onChange={(event) => setVoiceId(event.target.value)}>
-              <option value="">
-                Match avatar{avatar?.voice_profile_id ? ` · ${avatar.voice_profile_id}` : ''}
-              </option>
-              {voices.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.id} · {item.review.presentation}
-                </option>
-              ))}
-            </select>
-            {!voiceId && !avatar?.voice_profile_id && (
-              <p className="field-note">
-                The first live call matches a voice to this character and saves it.
-              </p>
-            )}
-            <div className="voice-actions">
-              <button
-                onClick={() => void castVoice()}
-                disabled={casting || !health?.openai_configured || !voices.length}
-              >
-                {casting ? 'Matching…' : avatar?.voice_profile_id ? 'Rematch' : 'Match voice'}
-              </button>
-              <button onClick={previewVoice} disabled={!(voiceId || avatar?.voice_profile_id)}>
-                Preview voice
-              </button>
-            </div>
-            {avatar?.casting_status === 'needs_recast' && (
-              <p className="field-note">Avatar or voice library changed. Rematch before calling.</p>
-            )}
-          </fieldset>
-          <section className="test-audio" aria-label="Test audio">
-            <label htmlFor="test-reply">Test reply</label>
-            <div className="test-row">
+          <section className="display-settings" aria-label="Display">
+            <h3>Display</h3>
+            <label className="toggle-row">
+              <span>
+                <Icon name="captions" />
+                Live captions
+              </span>
+              <input
+                type="checkbox"
+                checked={showCaptions}
+                onChange={(event) => setShowCaptions(event.target.checked)}
+              />
+            </label>
+            <label className="toggle-row">
+              <span>
+                <Icon name="clock" />
+                Call timer
+              </span>
+              <input
+                type="checkbox"
+                checked={showTimer}
+                onChange={(event) => setShowTimer(event.target.checked)}
+              />
+            </label>
+          </section>
+          <DeviceSettings
+            choices={{
+              videoinput: camera.deviceId,
+              audioinput: inputDevice,
+              audiooutput: outputDevice,
+            }}
+            refreshKey={`${camera.enabled}:${camera.deviceId}:${session?.id}:${mic}`}
+            disabled={pending || camera.pending}
+            onSelect={selectDevice}
+          />
+          {session && (
+            <button
+              className="interrupt-action"
+              onClick={() => {
+                preferences.current?.close();
+                void interrupt();
+              }}
+            >
+              <Icon name="stop" />
+              Interrupt response
+            </button>
+          )}
+          <details className="setup-details" open={!locked}>
+            <summary>Avatar & voice</summary>
+            {locked && <p className="field-note">End the call to change the avatar or voice.</p>}
+            <fieldset disabled={locked}>
+              <legend>Avatar</legend>
+              <div className="avatar-choices">
+                {avatars.map((item) => (
+                  <button
+                    key={item.id}
+                    className={avatarId === item.id ? 'selected' : ''}
+                    onClick={() => selectAvatar(item.id)}
+                    aria-label={`Select ${item.name}`}
+                    aria-pressed={avatarId === item.id}
+                  >
+                    {item.image_available && (
+                      <img src={item.image_url} alt="" width={640} height={480} />
+                    )}
+                    <span>{item.name}</span>
+                  </button>
+                ))}
+              </div>
+              <label htmlFor="model">Model</label>
               <select
-                id="test-reply"
-                value={caseId}
-                onChange={(event) => setCaseId(event.target.value)}
+                id="model"
+                value={modelId}
+                onChange={(event) => setModelId(event.target.value)}
               >
-                {cases.map((item) => (
-                  <option value={item.id} key={item.id} disabled={!item.available}>
-                    {item.title}
+                {models.map((item) => (
+                  <option key={item.id} value={item.id} disabled={!item.available}>
+                    {item.name}
+                    {!item.available ? ' · unavailable' : ''}
                   </option>
                 ))}
               </select>
-              <button
-                disabled={!session || mode !== 'diagnostic'}
-                onClick={() => void play(caseId)}
-                aria-label="Play test reply"
+              <label htmlFor="mode">Conversation</label>
+              <select id="mode" value={mode} onChange={(event) => setMode(event.target.value)}>
+                <option value="diagnostic">Test audio</option>
+                <option value="voice_diagnostic" disabled={!health?.openai_configured}>
+                  Live voice
+                </option>
+              </select>
+              {!health?.openai_configured && (
+                <p className="field-note">
+                  Add your OpenAI key on the server to enable live voice.
+                </p>
+              )}
+              <label htmlFor="voice">Voice</label>
+              <select
+                id="voice"
+                value={voiceId}
+                onChange={(event) => {
+                  previewAudio.current?.pause();
+                  setVoiceId(event.target.value);
+                }}
               >
-                <Icon name="play" />
-              </button>
-            </div>
-            <p className="field-note">Start a call in Test audio mode, then play a reply.</p>
-          </section>
+                <option value="">
+                  {health?.tts_provider === 'elevenlabs'
+                    ? `${avatar?.voice_profile_id ? 'Matched' : 'Default'} voice${defaultVoice?.name ? ` · ${defaultVoice.name}` : ''}`
+                    : `Match avatar${avatar?.voice_profile_id ? ` · ${avatar.voice_profile_id}` : ''}`}
+                </option>
+                {voices.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name || item.id} · {item.review.presentation}
+                  </option>
+                ))}
+              </select>
+              {health?.tts_provider === 'elevenlabs' && selectedVoice && (
+                <div className="voice-actions">
+                  <button onClick={previewVoice} disabled={!selectedVoice.preview_available}>
+                    Preview voice
+                  </button>
+                  <span className="field-note">Stock voice sample</span>
+                </div>
+              )}
+              {avatar?.voice_note && !voiceId && <p className="field-note">{avatar.voice_note}</p>}
+              {avatar?.note && <p className="field-note">{avatar.note}</p>}
+              {health?.tts_provider === 'elevenlabs' && (
+                <p className="field-note">
+                  {health.tts_configured
+                    ? 'ElevenLabs speech is configured on the server.'
+                    : 'Add the ElevenLabs key and voice ID on the server to enable speech.'}
+                </p>
+              )}
+              {health?.tts_provider !== 'elevenlabs' && !voiceId && !avatar?.voice_profile_id && (
+                <p className="field-note">
+                  The first live call matches a voice to this character and saves it.
+                </p>
+              )}
+              {health?.tts_provider !== 'elevenlabs' && (
+                <div className="voice-actions">
+                  <button
+                    onClick={() => void castVoice()}
+                    disabled={casting || !health?.openai_configured || !voices.length}
+                  >
+                    {casting ? 'Matching…' : avatar?.voice_profile_id ? 'Rematch' : 'Match voice'}
+                  </button>
+                  <button onClick={previewVoice} disabled={!(voiceId || avatar?.voice_profile_id)}>
+                    Preview voice
+                  </button>
+                </div>
+              )}
+              {health?.tts_provider !== 'elevenlabs' &&
+                avatar?.casting_status === 'needs_recast' && (
+                  <p className="field-note">
+                    Avatar or voice library changed. Rematch before calling.
+                  </p>
+                )}
+            </fieldset>
+            <section className="test-audio" aria-label="Test audio">
+              <label htmlFor="test-reply">Test reply</label>
+              <div className="test-row">
+                <select
+                  id="test-reply"
+                  value={caseId}
+                  onChange={(event) => setCaseId(event.target.value)}
+                >
+                  {cases.map((item) => (
+                    <option value={item.id} key={item.id} disabled={!item.available}>
+                      {item.title}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  disabled={!session || mode !== 'diagnostic'}
+                  onClick={() => void play(caseId)}
+                  aria-label="Play test reply"
+                >
+                  <Icon name="play" />
+                </button>
+              </div>
+              <p className="field-note">Start a call in Test audio mode, then play a reply.</p>
+            </section>
+          </details>
           <details className="technical-details">
             <summary>Connection details</summary>
             <p>{models.find((item) => item.id === modelId)?.description}</p>
             <dl>
               <div>
                 <dt>Output</dt>
-                <dd>640 × 480</dd>
+                <dd>
+                  {health?.geometry ? `${health.geometry.width} × ${health.geometry.height}` : '—'}
+                </dd>
               </div>
               <div>
-                <dt>Published video</dt>
-                <dd>{metrics?.transport_fps ?? '—'} fps</dd>
+                <dt>Video before cap</dt>
+                <dd>{metrics?.transport_fps ?? 'n/a'} fps</dd>
+              </div>
+              <div>
+                <dt>Video frame-rate cap</dt>
+                <dd>{metrics?.video_max_fps ?? 'n/a'} fps</dd>
               </div>
               <div>
                 <dt>Audio queue</dt>
-                <dd>{metrics?.audio_queue_ms ?? '—'} ms</dd>
+                <dd>{metrics?.audio_queue_ms ?? 'n/a'} ms</dd>
               </div>
               <div>
                 <dt>First media ready</dt>
-                <dd>{metrics?.first_media_ms ?? '—'} ms</dd>
+                <dd>{metrics?.first_media_ms ?? 'n/a'} ms</dd>
               </div>
               <div>
                 <dt>Mic packets</dt>
@@ -1000,27 +1342,44 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
               </div>
               <div>
                 <dt>Cancel acknowledgement</dt>
-                <dd>{metrics?.browser_playback.cancel_ack_roundtrip_ms?.toFixed(1) ?? '—'} ms</dd>
+                <dd>{metrics?.browser_playback.cancel_ack_roundtrip_ms?.toFixed(1) ?? 'n/a'} ms</dd>
               </div>
             </dl>
             {modelId !== 'mock' && (
               <dl>
                 <div>
                   <dt>Generated video</dt>
-                  <dd>{metrics?.model_generation_fps ?? '—'} fps</dd>
+                  <dd>{metrics?.model_generation_fps ?? 'n/a'} fps</dd>
                 </div>
                 <div>
                   <dt>Distinct generated video</dt>
                   <dd>
-                    {metrics?.distinct_generation_fps ?? '—'} fps ·{' '}
+                    {metrics?.distinct_generation_fps ?? 'n/a'} fps ·{' '}
                     {metrics?.exact_duplicate_frames ?? 0} exact repeats
                   </dd>
                 </div>
                 <div>
-                  <dt>Generated / held frames</dt>
+                  <dt>Speech / cached idle / held frames</dt>
                   <dd>
-                    {metrics?.generated_frames ?? 0} / {metrics?.held_frames ?? 0}
+                    {metrics?.generated_frames ?? 0} / {metrics?.idle_motion_frames ?? 0} /{' '}
+                    {metrics?.held_frames ?? 0}
                   </dd>
+                </div>
+                <div>
+                  <dt>First audio → render request</dt>
+                  <dd>
+                    {metrics?.avatar_timing?.first_audio_to_gpu_request_ms?.toFixed(0) ?? 'n/a'} ms
+                  </dd>
+                </div>
+                <div>
+                  <dt>First chunk generation + IPC</dt>
+                  <dd>
+                    {metrics?.avatar_timing?.first_chunk_roundtrip_ms?.toFixed(0) ?? 'n/a'} ms
+                  </dd>
+                </div>
+                <div>
+                  <dt>Decoded → publication</dt>
+                  <dd>{metrics?.avatar_timing?.decoded_to_publish_ms?.toFixed(0) ?? 'n/a'} ms</dd>
                 </div>
                 <div>
                   <dt>Pending speech</dt>
@@ -1039,14 +1398,19 @@ function App({ onLock }: { onLock?: () => Promise<void> }) {
                   <dd>
                     {metrics?.gpu_memory
                       ? `${(metrics.gpu_memory.gpu_allocated_bytes / 2 ** 30).toFixed(1)} / ${(metrics.gpu_memory.gpu_peak_allocated_bytes / 2 ** 30).toFixed(1)} GiB`
-                      : '—'}
+                      : 'n/a'}
                   </dd>
                 </div>
               </dl>
             )}
             <p>
               Frame feedback confirms video presentation with audio enabled; speaker latency is not
-              measured. Your camera stays on this device. Calls are not recorded.
+              measured.{' '}
+              {health?.camera_vision
+                ? 'During a live call, your enabled camera is shared with the AI. One recent image is used per spoken turn.'
+                : 'Your camera stays on this device.'}{' '}
+              This app does not save call recordings or transcripts. Conversation providers process
+              shared audio, images and text under their own retention policies.
             </p>
           </details>
           {onLock && (

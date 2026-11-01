@@ -59,7 +59,7 @@ test('real voice reaches AvatarForever and returns interruptible 4:3 media', asy
     await expect(page.getByLabel('Model', { exact: true })).toHaveValue('avatarforever');
     await expect(page.getByLabel('Conversation', { exact: true })).toHaveValue('voice_diagnostic');
     await page.getByRole('button', { name: 'Close settings' }).click();
-    await page.getByRole('button', { name: 'Turn on camera', exact: true }).click();
+    await page.getByRole('button', { name: 'Turn camera on', exact: true }).click();
     await page.getByRole('button', { name: 'Start call' }).click();
     await expect(page.getByRole('button', { name: 'End call' })).toBeVisible({ timeout: 340000 });
     await expect.poll(() => Boolean(session), { timeout: 15000 }).toBe(true);

@@ -20,6 +20,14 @@ CODE_REVISION = "de4deb6a55c9567a17dad58d67390fe089993630"
 WEIGHT_REVISION = "622ea82482c09e7fb2d8e29cb7ff1d009c820f05"
 GEMMA_REVISION = "68f7ee4fbd59087436ada77ed2d62f373fdd4482"
 
+# Shared by the streaming worker and CPU-only diagnostic input preparation.
+STREAMING_PROMPT = (
+    "A person speaking naturally to the camera in an upper-body video call. "
+    "The lips and jaw articulate the supplied speech clearly, with natural "
+    "blinking, subtle head motion and conversational expressions. "
+    "Stable identity and background, continuous motion in a single shot."
+)
+
 
 def file_hash(path: Path) -> str:
     with path.open("rb") as stream:

@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import hmac
 import json
+import re
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -22,10 +23,12 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .catalog import Catalog
 from .access import COOKIE, TTL, DemoAccess
 from .config import ROOT, Settings, settings
+from .contracts import HEIGHT, WIDTH, FPS, PUBLISH_FPS
 from .gpu_pool import GPUWorkerPool
 from .worker import DemoWorker, delete_room, room_token
 from .voices import VoicePreparationError, VoiceService
 from .voices import digest, save_json
+from .elevenlabs_client import ensure_speech_credits, ElevenLabsSpeechError
 
 
 @dataclass
@@ -157,8 +160,8 @@ class SessionManager:
                 "voice_selection": session.voice_selection,
                 "metrics": session.final_metrics,
                 "geometry": {
-                    "width": 640,
-                    "height": 480,
+                    "width": WIDTH,
+                    "height": HEIGHT,
                     "renderer_is_model_inference": session.model_id != "mock",
                 },
                 "recorded_media": False,
@@ -209,7 +212,7 @@ class SessionManager:
 
 
 class StartRequest(BaseModel):
-    avatar_id: str = "ref01"
+    avatar_id: str | None = None
     model_id: Literal["mock", "avatarforever"] = "mock"
     mode: Literal["diagnostic", "voice_diagnostic"] = "diagnostic"
     voice_profile_id: str | None = None
@@ -230,6 +233,7 @@ class AccessRequest(BaseModel):
 
 class PlaybackRequest(BaseModel):
     frame_id: int | None = Field(default=None, ge=0, le=4294967295)
+    completed_frame_id: int | None = Field(default=None, ge=0, le=4294967295)
     audio_playing: bool = False
     cancel_epoch: int | None = Field(default=None, ge=0, le=65535)
     mute_ms: float | None = Field(default=None, ge=0, le=60000, allow_inf_nan=False)
@@ -338,10 +342,28 @@ def create_app(config: Settings = settings) -> FastAPI:
         except httpx.HTTPError:
             livekit = False
         gpu = manager.gpu_pool.snapshot()
+        ui_asset = None
+        index = ROOT / "realtime/web/dist/index.html"
+        if index.is_file():
+            match = re.search(r'src="(/assets/index-[^" ]+\.js)"', index.read_text())
+            ui_asset = match.group(1) if match else None
         return {
             "status": "ok",
+            "geometry": {
+                "width": WIDTH,
+                "height": HEIGHT,
+                "fps": FPS,
+                "publish_fps": PUBLISH_FPS,
+            },
             "livekit": livekit,
             "openai_configured": bool(config.openai_api_key.get_secret_value()),
+            "tts_provider": config.tts_provider,
+            "tts_configured": config.tts_provider != "elevenlabs"
+            or bool(
+                config.elevenlabs_api_key.get_secret_value()
+                and (catalog.bundled or config.elevenlabs_voice_id)
+            ),
+            "camera_vision": config.camera_vision,
             "avatarforever_ready": gpu["loaded"],
             "avatarforever": gpu,
             "mode": "experimental_avatar"
@@ -349,6 +371,7 @@ def create_app(config: Settings = settings) -> FastAPI:
             else "local_diagnostic",
             "active_session": manager.active is not None,
             "control_transport": config.control_transport,
+            "ui_asset": ui_asset,
         }
 
     @app.get("/api/models")
@@ -370,7 +393,9 @@ def create_app(config: Settings = settings) -> FastAPI:
                 "available": config.avatarforever_enabled,
                 "runtime": manager.gpu_pool.snapshot(),
                 "qualification": "streaming_experimental",
-                "capabilities": capabilities("avatarforever"),
+                "capabilities": capabilities(
+                    "avatarforever", continuous=config.avatar_continuous_motion
+                ),
                 "description": "Bounded streaming adapter. Requires pinned weights and a prepared GPU; qualification results are configuration-specific.",
             },
         ]
@@ -384,6 +409,7 @@ def create_app(config: Settings = settings) -> FastAPI:
                 if saved:
                     avatar["casting_status"] = saved["status"]
                     avatar["voice_profile_id"] = saved["voice_profile_id"]
+                    avatar["voice_note"] = saved.get("description", "")
             except (ValueError, OSError):
                 avatar["casting_status"] = "preparation_error"
         return result
@@ -406,6 +432,8 @@ def create_app(config: Settings = settings) -> FastAPI:
 
     @app.post("/api/avatars/{avatar_id}/cast-voice")
     async def cast_voice(avatar_id: str, body: CastRequest):
+        if catalog.bundled:
+            raise HTTPException(403, "Demo voice assignments are managed by the host")
         if avatar_id not in catalog.portraits:
             raise HTTPException(404, "Unknown avatar")
         if len(body.preference) > 1000:
@@ -438,6 +466,8 @@ def create_app(config: Settings = settings) -> FastAPI:
 
     @app.post("/api/sessions", status_code=201)
     async def start(body: StartRequest):
+        if body.avatar_id is None:
+            body.avatar_id = next(iter(catalog.portraits))
         if manager.active is not None:
             raise HTTPException(
                 409, "The demo is busy. Wait for the active call to finish."
@@ -451,10 +481,23 @@ def create_app(config: Settings = settings) -> FastAPI:
             )
         selected_voice = None
         if body.mode == "voice_diagnostic":
+            if config.tts_provider == "elevenlabs" and not (
+                config.elevenlabs_api_key.get_secret_value()
+                and (catalog.bundled or config.elevenlabs_voice_id)
+            ):
+                raise HTTPException(
+                    409,
+                    "Configure ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID before calling. No fallback was started.",
+                )
             if not config.openai_api_key.get_secret_value():
                 raise HTTPException(
                     409, "Configure OPENAI_API_KEY before starting a live voice call."
                 )
+            if config.tts_provider == "elevenlabs":
+                try:
+                    await ensure_speech_credits(config)
+                except ElevenLabsSpeechError as exc:
+                    raise HTTPException(409, str(exc)) from None
             try:
                 selected_voice = await voices.resolve_for_call(
                     body.avatar_id, body.voice_profile_id
@@ -524,9 +567,39 @@ def create_app(config: Settings = settings) -> FastAPI:
             raise HTTPException(409, "Session ended")
         # Do not take session.lock: interruption may be waiting for this receipt.
         accepted = session.worker.playback.feedback(
-            body.frame_id, body.audio_playing, body.cancel_epoch, body.mute_ms
+            body.frame_id,
+            body.audio_playing,
+            body.cancel_epoch,
+            body.mute_ms,
+            completed_frame_id=body.completed_frame_id,
         )
+        if accepted:
+            session.worker.advance_captions(body.frame_id, body.audio_playing)
         return {"accepted": accepted}
+
+    @app.get("/api/sessions/{sid}/transcripts")
+    async def transcripts(session: Session = Depends(own)):
+        return JSONResponse(
+            session.worker.transcripts.snapshot(), headers={"Cache-Control": "no-store"}
+        )
+
+    @app.get("/api/sessions/{sid}/transcripts/events")
+    async def transcript_events(request: Request, session: Session = Depends(own)):
+        async def stream():
+            ledger = session.worker.transcripts
+            while not await request.is_disconnected():
+                ledger.changed.clear()
+                yield f"data: {json.dumps(ledger.snapshot())}\n\n"
+                if session.ended or ledger.closed:
+                    return
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(ledger.changed.wait(), 2)
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={"X-Accel-Buffering": "no", "Cache-Control": "no-store"},
+        )
 
     @app.get("/api/sessions/{sid}/events")
     async def events(request: Request, session: Session = Depends(own)):

@@ -39,7 +39,10 @@ def test_review_allows_wrappers_but_rejects_ambiguous_or_invalid_content():
 @pytest.fixture
 def voice_service(tmp_path):
     settings = Settings(
-        _env_file=None, assets_dir=tmp_path / "assets", state_dir=tmp_path / "state"
+        avatar_catalog="research",
+        _env_file=None,
+        assets_dir=tmp_path / "assets",
+        state_dir=tmp_path / "state",
     )
     catalog = Catalog(settings)
     settings.assets_dir.joinpath("images").mkdir(parents=True)

@@ -87,7 +87,8 @@ test('warm spoken turns through voice, GPU and browser playback', async ({ page 
       const outputs = state.analysers.filter(
         (node: AnalyserNode) => node.fftSize === 128 && node.context !== state.input,
       );
-      if (outputs.length === 1) {
+      // First analyser is post-gate; the second checks pre-gate PCM readiness.
+      if (outputs.length === 2) {
         const meter = outputs[0] as AnalyserNode,
           values = new Float32Array(meter.fftSize);
         meter.getFloatTimeDomainData(values);
@@ -316,6 +317,8 @@ test('warm spoken turns through voice, GPU and browser playback', async ({ page 
         gpu_allocated_bytes: status.metrics.gpu_memory?.gpu_allocated_bytes,
         voice_timing: status.metrics.voice_timing,
         render_stalls: status.metrics.render_stalls,
+        speech_underflow_frames: status.metrics.speech_underflow_frames,
+        max_video_capture_lateness_ms: status.metrics.max_video_capture_lateness_ms,
       });
       await save();
     }

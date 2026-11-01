@@ -7,13 +7,23 @@ import math
 
 import numpy as np
 
-from .contracts import AudioChunk, FPS, FRAME_SAMPLES, HEIGHT, SAMPLE_RATE, WIDTH
+from .contracts import (
+    AudioChunk,
+    FPS,
+    FRAME_SAMPLES,
+    HEIGHT,
+    PUBLISH_FPS,
+    SAMPLE_RATE,
+    WIDTH,
+)
 
 FIRST_FRAMES = 25  # four LTX temporal latents: (4 - 1) * 8 + 1
 NEXT_FRAMES = 32  # each following four latents adds 4 * 8 frames
+LOOKAHEAD_FRAMES = 7
+LOOKAHEAD_SAMPLES = LOOKAHEAD_FRAMES * FRAME_SAMPLES
 
 
-def capabilities(model_id: str) -> dict:
+def capabilities(model_id: str, *, continuous=False) -> dict:
     """Describe the implemented adapter, not an upstream performance claim."""
     if model_id not in {"mock", "avatarforever"}:
         raise ValueError("Unsupported streaming adapter")
@@ -21,6 +31,7 @@ def capabilities(model_id: str) -> dict:
     first, following = (FIRST_FRAMES, NEXT_FRAMES) if real else (1, 1)
     return {
         "geometry": {"width": WIDTH, "height": HEIGHT, "fps": FPS, "native": True},
+        "video_max_fps": PUBLISH_FPS,
         "audio": {
             "sample_rate": SAMPLE_RATE,
             "channels": 1,
@@ -30,17 +41,28 @@ def capabilities(model_id: str) -> dict:
             "following_chunk_samples": following * FRAME_SAMPLES,
         },
         "incremental_input": True,
-        "additional_future_audio_samples": 0,
+        "additional_future_audio_samples": LOOKAHEAD_SAMPLES if real else 0,
         "chunk_buffering_seconds": {"first": first / FPS, "following": following / FPS},
         "conditioning": {
             "image": True,
             "audio": True,
             "prompt": "fixed_video_call_prompt" if real else "unsupported",
         },
-        "reset": "reference_and_empty_history_per_response" if real else "stateless",
+        "reset": (
+            "reference_and_empty_history_per_session"
+            if continuous
+            else "reference_and_empty_history_per_response"
+        )
+        if real
+        else "stateless",
+        "idle": "continuous_silent_conditioning"
+        if real and continuous
+        else "hold_or_cached_loop",
         "cancel": "invalidate_epoch_and_discard_late_results",
         "qualification": "streaming_experimental" if real else "diagnostic_only",
-        "timing_note": "Frames can depend on later samples within the arrived chunk; chunk buffering is included in latency.",
+        "timing_note": "Native chunks require 280 ms of arrived conditioning lookahead; chunk buffering and lookahead are included in latency."
+        if real
+        else "Diagnostic renderer has no lookahead.",
     }
 
 
@@ -59,7 +81,7 @@ class GeneratedBatch:
             3,
         ):
             raise ValueError(
-                "Native output must cover valid audio at 25 FPS in direct 640x480"
+                f"Native output must cover valid audio at 25 FPS in direct {WIDTH}x{HEIGHT}"
             )
         if not math.isfinite(self.compute_seconds) or self.compute_seconds <= 0:
             raise ValueError("Missing generation timing")
@@ -78,12 +100,19 @@ def take_batch(buffer) -> AudioChunk | None:
     sample count is carried separately and determines published output coverage.
     """
     count = chunk_frames(buffer.position) * FRAME_SAMPLES
-    if not len(buffer.samples) or (buffer.receiving and len(buffer.samples) < count):
+    if not len(buffer.samples) or (
+        buffer.receiving and len(buffer.samples) < count + LOOKAHEAD_SAMPLES
+    ):
         return None
+    lookahead = np.zeros(LOOKAHEAD_SAMPLES, dtype=np.int16)
+    future = buffer.samples[count : count + LOOKAHEAD_SAMPLES]
+    lookahead[: len(future)] = future
     part = buffer.samples[:count]
     start = buffer.position
     buffer.samples = buffer.samples[len(part) :]
     buffer.position += len(part)
     pcm = np.zeros(count, dtype=np.int16)
     pcm[: len(part)] = part
-    return AudioChunk(buffer.response_id, buffer.epoch, start, pcm, len(part))
+    return AudioChunk(
+        buffer.response_id, buffer.epoch, start, pcm, len(part), lookahead
+    )

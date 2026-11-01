@@ -53,7 +53,7 @@ test('two-panel call: local camera, real remote media, interruption and cleanup'
   await expect(page.getByRole('dialog')).not.toBeVisible();
   await page.getByAltText('Avatar reference').evaluate((image: HTMLImageElement) => image.decode());
   await page.screenshot({ path: '../../runs/realtime/local-demo/call-ready.png', fullPage: true });
-  await page.getByRole('button', { name: 'Turn on camera', exact: true }).click();
+  await page.getByRole('button', { name: 'Turn camera on', exact: true }).click();
   const local = page.getByLabel('Your camera', { exact: true });
   const remote = page.getByLabel('Generated avatar', { exact: true });
   await expect
@@ -62,7 +62,17 @@ test('two-panel call: local camera, real remote media, interruption and cleanup'
   await local.evaluate((element: HTMLVideoElement) => {
     (window as any).testCameraStream = element.srcObject;
   });
+  await settings(page);
+  await page.getByLabel('Model', { exact: true }).selectOption('mock');
+  await page.getByLabel('Conversation', { exact: true }).selectOption('diagnostic');
+  await page.getByRole('button', { name: 'Close settings' }).click();
+  const created = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/sessions') && response.request().method() === 'POST',
+    { timeout: 45000 },
+  );
   await page.getByRole('button', { name: 'Start call' }).click();
+  expect((await created).status()).toBe(201);
   try {
     await expect(page.getByRole('button', { name: 'End call' })).toBeVisible();
     await expect
@@ -166,6 +176,10 @@ test('frame feedback and cancellation survive repeated responses and slow HTTP a
   page,
 }) => {
   await page.goto('/');
+  await settings(page);
+  await page.getByLabel('Model', { exact: true }).selectOption('mock');
+  await page.getByLabel('Conversation', { exact: true }).selectOption('diagnostic');
+  await page.getByRole('button', { name: 'Close settings' }).click();
   const created = page.waitForResponse(
     (reply) => reply.url().endsWith('/api/sessions') && reply.request().method() === 'POST',
   );
@@ -276,10 +290,10 @@ test('camera denial leaves the call usable and camera retries release their trac
     };
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Turn on camera', exact: true }).click();
+  await page.getByRole('button', { name: 'Turn camera on', exact: true }).click();
   await expect(page.getByText('Camera access is blocked.', { exact: false })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start call' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Turn on camera', exact: true }).click();
+  await page.getByRole('button', { name: 'Turn camera on', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Turn camera off' })).toBeVisible();
   await page.getByLabel('Your camera', { exact: true }).evaluate((element: HTMLVideoElement) => {
     (window as any).testCameraStream = element.srcObject;
@@ -309,7 +323,7 @@ test('cancelling a pending camera request also stops a late permission result', 
     };
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Turn on camera', exact: true }).click();
+  await page.getByRole('button', { name: 'Turn camera on', exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => !!(window as any).releaseCameraPermission))
     .toBe(true);

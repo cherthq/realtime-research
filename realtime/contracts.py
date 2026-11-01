@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Callable, Protocol
 
 import numpy as np
 
+from .geometry import HEIGHT, WIDTH
+
 SAMPLE_RATE = 48_000
-FPS = 25
-WIDTH, HEIGHT = 640, 480
+FPS = 25  # Native model/audio alignment; do not change to throttle transport.
+PUBLISH_FPS = 24  # WebRTC encoder cap; audio keeps its original duration.
 FRAME_SAMPLES = SAMPLE_RATE // FPS
 
 
@@ -20,6 +22,7 @@ class AudioChunk:
     sample_start: int
     pcm: np.ndarray
     valid_samples: int
+    lookahead: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.int16))
 
     def __post_init__(self):
         if self.pcm.dtype != np.int16 or self.pcm.ndim != 1:
@@ -28,6 +31,12 @@ class AudioChunk:
             raise ValueError("Invalid audio coverage")
         if self.sample_start < 0:
             raise ValueError("Negative audio position")
+        if (
+            self.lookahead.dtype != np.int16
+            or self.lookahead.ndim != 1
+            or len(self.lookahead) > SAMPLE_RATE
+        ):
+            raise ValueError("Invalid bounded PCM lookahead")
 
 
 @dataclass(frozen=True)
@@ -37,7 +46,7 @@ class MediaChunk:
 
     def __post_init__(self):
         if self.rgb.shape != (HEIGHT, WIDTH, 3) or self.rgb.dtype != np.uint8:
-            raise ValueError("Renderer must emit native 640x480 RGB uint8")
+            raise ValueError(f"Renderer must emit native {WIDTH}x{HEIGHT} RGB uint8")
 
 
 class Renderer(Protocol):
@@ -56,7 +65,12 @@ LIVE_VOICE_PENDING_SECONDS = 300
 class ResponseBuffer:
     """Bounded PCM timeline with epoch invalidation and exact partial coverage."""
 
-    def __init__(self, *, max_pending_seconds: int = 20):
+    def __init__(
+        self,
+        *,
+        max_pending_seconds: int = 20,
+        on_change: Callable[[], None] | None = None,
+    ):
         if not isinstance(max_pending_seconds, int) or max_pending_seconds <= 0:
             raise ValueError(
                 "Pending audio capacity must be a positive number of seconds"
@@ -67,6 +81,11 @@ class ResponseBuffer:
         self.position = 0
         self.samples = np.zeros(0, dtype=np.int16)
         self.receiving = False
+        self.on_change = on_change
+
+    def _changed(self):
+        if self.on_change is not None:
+            self.on_change()
 
     def replace(self, response_id: str, samples: np.ndarray):
         if samples.ndim != 1 or samples.dtype != np.int16:
@@ -76,11 +95,13 @@ class ResponseBuffer:
         self.cancel()
         self.response_id = response_id
         self.samples = samples.copy()
+        self._changed()
 
     def begin(self, response_id: str) -> int:
         self.cancel()
         self.response_id = response_id
         self.receiving = True
+        self._changed()
         return self.epoch
 
     def append(self, response_id: str, epoch: int, samples: np.ndarray) -> bool:
@@ -93,11 +114,13 @@ class ResponseBuffer:
                 f"Pending response exceeded the {self.max_pending_seconds}-second audio queue bound"
             )
         self.samples = np.concatenate((self.samples, samples))
+        self._changed()
         return True
 
     def finish(self, response_id: str, epoch: int):
         if epoch == self.epoch and response_id == self.response_id:
             self.receiving = False
+            self._changed()
 
     def cancel(self):
         self.epoch += 1
@@ -105,6 +128,7 @@ class ResponseBuffer:
         self.samples = np.zeros(0, dtype=np.int16)
         self.position = 0
         self.receiving = False
+        self._changed()
 
     @property
     def active(self):

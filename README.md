@@ -1,104 +1,57 @@
-# Chert realtime avatar research
+# Chert realtime avatar demo
 
-Research tooling for image-and-audio-driven avatar models and review-first
-preparation of talking-person video data.
+A browser video call with a generated avatar: speak, interrupt, share your camera,
+and read live captions. AvatarForever runs on your GPU; OpenAI handles conversation
+and vision, ElevenLabs generates speech, and LiveKit Cloud carries audio/video.
 
-The repository contains three workflows:
+Ten reference portraits and stock-voice assignments are included. API keys, model
+weights, recordings and private character assets are not included.
 
-- **Data preparation:** extract fixed 4:3 upper-body clips, preserve audio timing,
-  record quality evidence, review candidates and export approved samples.
-- **Model research:** inspect and retrieve pinned upstream avatar-model sources
-  for baseline comparisons, fine-tuning feasibility and distillation research.
-- **Interactive demo:** a two-panel browser call with OpenAI voice and a persistent
-  AvatarForever GPU worker, connected through self-hosted LiveKit over SSH.
+## Demo
 
-No collection, checkpoint download, training or deployment starts automatically.
-Datasets, model weights, generated media, credentials and private reviews are not
-included in the checkout.
+The interface has a large avatar, an inset self-camera, fading captions and call
+controls underneath. Swap the camera views or choose another avatar in Settings.
+A recorded walkthrough will be added when it is ready.
 
-## Get started
+## Set up
 
-To recreate the interactive demo on a new machine, start with
-**[Recreate the demo](docs/recreate-demo.md)**. It covers the separate media pack,
-GPU setup, credentials, voice preparation, SSH, verification and shutdown.
+Use an Ubuntu GPU host with an H100 80 GB, Python 3.11, Node.js 22.12+, FFmpeg and
+at least 150 GB free disk space. You need LiveKit Cloud, OpenAI and ElevenLabs
+credentials, plus Hugging Face access to the required Gemma text encoder.
 
-```bash
-git clone https://github.com/cherthq/realtime-research.git
-cd realtime-research
-```
+1. Clone this repository and install the app dependencies.
+2. Build the web client with `npm ci && npm run build` in `realtime/web`.
+3. Run the GPU setup script and download the pinned AvatarForever/Gemma weights.
+4. Copy `realtime/.env.example` to `realtime/.env` and fill the private credentials.
+5. Start the demo host, prewarm the model, and connect through SSH or HTTPS.
 
-For data preparation, follow the [data pipeline README](data_fetching/README.md).
-It documents Python 3.11 setup, source manifests, processing limits, review and
-export. See [performance and GPU setup](data_fetching/SPEED.md) before processing
-long recordings or increasing concurrency.
+**[Copy-and-paste setup instructions →](docs/recreate-demo.md)**
 
-For the model workspace, Python 3.10+ is sufficient for the standard-library
-orchestration script:
+For a public domain, use the [HTTPS deployment guide](docs/public-demo.md).
+Secrets stay on the backend; the browser receives only a short-lived room token
+and a key scoped to its own call.
 
-```bash
-python scripts/workspace.py list
-python scripts/workspace.py sources all --dry-run
-python scripts/workspace.py doctor
-```
+## What is included
 
-To explicitly retrieve registered upstream sources:
-
-```bash
-python scripts/workspace.py sources all
-```
-
-Sources are cloned into ignored `vendor/` directories at revisions recorded in
-`configs/models.json`. Existing checkouts are verified, not reset or silently
-updated. Checkpoint downloads and environment installation are separate steps.
-
-## Repository layout
-
-| Location | Purpose |
+| Directory | Purpose |
 | --- | --- |
-| `data_fetching/` | Preprocessing CLI, quality checks, examples and tests |
-| `configs/models.json` | Registered model sources, revisions and weight references |
-| `scripts/workspace.py` | Model workspace inspection and source retrieval |
-| `docs/running-baselines.md` | Explicit GPU setup, file-input runs and result boundaries |
-| `docs/experiments.md` | Experiment protocol and dataset conventions |
-| `infra/` | Remote-host setup and SSH configuration template |
-| `realtime/` | Web app, voice agent, transport, GPU adapter and tests |
-| `docs/recreate-demo.md` | Fresh-checkout demo setup and handoff instructions |
+| [realtime/](realtime/README.md) | Web app, voice agent, streaming worker and tests |
+| [realtime/demo-avatars/](realtime/demo-avatars/README.md) | Ten demo reference images and stock voices |
+| [data_fetching/](data_fetching/README.md) | Review-first 4:3 talking-video preparation pipeline |
+| [configs/](configs/models.json) and [scripts/](scripts/workspace.py) | Pinned model sources and baseline tooling |
+| [infra/](infra/lambda.md) | GPU setup and deployment helpers |
 
-Generated artifacts belong in ignored `data/`, `checkpoints/`, `runs/` and
-`vendor/` directories, or on an explicitly configured external storage volume.
-Keep private keys and service credentials outside tracked files.
+The existing [model baseline workflow](docs/running-baselines.md) and
+[zero-shot protocol](docs/zero-shot-baseline.md) remain separate from the live demo.
+No dataset collection, download or training starts automatically.
 
-## Registered model baselines
+## Current limits
 
-| Model ID | Model |
-| --- | --- |
-| `liveact` | SoulX-LiveAct |
-| `liveavatar` | Live Avatar |
-| `flashtalk` | SoulX-FlashTalk-14B |
-| `hunyuan_avatar` | HunyuanVideo-Avatar (optional legacy offline comparator) |
+This is an experimental **one-call-per-GPU** demo with a ten-minute call limit,
+not a production capacity claim. Long calls can drift visually; idle mouth
+motion and lip-sync are not perfect. See [tested scope and limitations](realtime/QUALIFICATION.md).
+The stream uses 4:3 geometry and a 24 FPS publication cap. Lower resolution can
+reduce compute but is not a cure for drift.
 
-The main three-model matrix is LiveAct, Live Avatar and FlashTalk. Its frozen
-input specification is documented in the [zero-shot protocol](docs/zero-shot-baseline.md).
-
-Registration does not establish training support, checkpoint compatibility or
-hardware capacity. Use a separate environment for each upstream project and
-follow its pinned documentation. These models render avatars; speech recognition,
-dialogue, voice generation and interruption handling are separate components.
-
-See the [experiment protocol](docs/experiments.md) and
-[remote-host guide](infra/lambda.md) for the model research workflow.
-
-## Validation and responsible use
-
-```bash
-python -m unittest discover -s data_fetching/tests -v
-```
-
-Install the data pipeline prerequisites first. Tests use synthetic local media
-or mocks, with optional dependency checks; they do not download recordings or
-model weights. See the pipeline README for the tested scope and limitations.
-
-Preprocessing produces candidates, not automatic training approval. Source
-permission, quality review and redistribution approval are separate decisions.
-Upstream code, checkpoint and source-media terms must be checked independently;
-inclusion in a source list does not grant permission for an intended use.
+Upstream models and reference images retain their own terms. The bundled stock
+voices are creative casting choices, not clones of the pictured people.

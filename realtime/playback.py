@@ -8,7 +8,7 @@ import time
 
 from livekit import rtc
 
-from .contracts import FRAME_SAMPLES, SAMPLE_RATE
+from .contracts import FPS, FRAME_SAMPLES, PUBLISH_FPS, SAMPLE_RATE
 
 
 def frame_id(epoch: int, sample_start: int, valid: bool) -> int:
@@ -51,6 +51,8 @@ class PlaybackLedger:
         audio_playing: bool,
         cancel_epoch: int | None = None,
         mute_ms: float | None = None,
+        *,
+        completed_frame_id: int | None = None,
     ):
         accepted = False
         if ident is not None and ident in self.sent:
@@ -58,10 +60,21 @@ class PlaybackLedger:
             self.browser_seen = True
             self.reports += 1
             self.last_frame_id = ident
+            completed = self.sent.get(completed_frame_id)
+            if (
+                audio_playing
+                and not valid
+                and completed
+                and completed[0] == epoch
+                and completed[2]
+            ):
+                # The browser has moved from this last speech frame into idle.
+                # Preserve its receipt even between periodic 100ms reports.
+                self.positions[epoch] = max(completed[1], self.positions.get(epoch, 0))
             if audio_playing and valid:
                 self.positions[epoch] = max(position, self.positions.get(epoch, 0))
-                while len(self.positions) > 32:
-                    self.positions.popitem(last=False)
+            while len(self.positions) > 32:
+                self.positions.popitem(last=False)
             accepted = True
         if (
             cancel_epoch == self.cancel_epoch
@@ -83,9 +96,27 @@ class PlaybackLedger:
 
 
 class TaggedVideoSource(rtc.VideoSource):
-    def __init__(self, width, height, ledger: PlaybackLedger, epoch):
+    def __init__(
+        self, width, height, ledger: PlaybackLedger, epoch, *, preserve_stale=False
+    ):
         super().__init__(width, height)
         self.ledger, self.epoch = ledger, epoch
+        self.preserve_stale = preserve_stale
+        # Decimate the paced native 25 FPS timeline without retiming its PCM.
+        # Keep the first frame; preserve this phase across speech/idle epochs.
+        self.rate_phase = FPS - 1
+        self.rate_limited_frames = 0
+        self.rate_inputs = 0
+        self.rate_outputs = 0
+
+    @property
+    def presentation_delay_seconds(self):
+        if self.rate_phase + PUBLISH_FPS < FPS:
+            return 0.0  # This native frame will be omitted.
+        # Place retained frames on uniform 24 Hz ticks instead of producing an
+        # 80 ms gap every second. Audio is unchanged; video trails its native
+        # sample by at most one native frame (38.3 ms for 25 -> 24).
+        return max(0.0, self.rate_outputs / PUBLISH_FPS - self.rate_inputs / FPS)
 
     def capture_frame(self, frame, **kwargs):
         current = self.epoch()
@@ -95,11 +126,20 @@ class TaggedVideoSource(rtc.VideoSource):
         # AVSynchronizer may already have dequeued an old frame when cancellation
         # clears its queue. Drop that frame at the actual capture boundary too.
         if epoch != current:
+            if not self.preserve_stale or valid:
+                return
+            epoch, position, valid = current, 0, False
+        self.rate_phase += PUBLISH_FPS
+        self.rate_inputs += 1
+        if self.rate_phase < FPS:
+            self.rate_limited_frames += 1
             return
+        self.rate_phase -= FPS
         ident = frame_id(epoch, position, valid)
         super().capture_frame(
             frame, metadata=rtc.FrameMetadata(frame_id=ident), **kwargs
         )
+        self.rate_outputs += 1
         self.ledger.capture(ident, epoch, position, valid)
 
 

@@ -16,7 +16,7 @@ async def main():
         "--voices",
         nargs="+",
         choices=sorted(VOICES),
-        default=["cedar", "marin", "alloy"],
+        default=None,
     )
     parser.add_argument("--rebuild-previews", action="store_true")
     parser.add_argument(
@@ -31,7 +31,18 @@ async def main():
         help="Generate/resume a separate frozen v2 replay pack after casting",
     )
     args = parser.parse_args()
-    service = VoiceService(settings, Catalog(settings))
+    if args.freeze_pack and settings.tts_provider == "qwen":
+        parser.error(
+            "Qwen currently supports live calls and previews; frozen replay export is not implemented for Qwen."
+        )
+    if args.voices is None:
+        args.voices = (
+            ["aiden", "serena"]
+            if settings.tts_provider == "qwen"
+            else ["cedar", "marin", "alloy"]
+        )
+    research = settings.model_copy(update={"avatar_catalog": "research"})
+    service = VoiceService(research, Catalog(research))
     try:
         for voice in args.voices:
             profile = await service.prepare(voice, replace=args.rebuild_previews)

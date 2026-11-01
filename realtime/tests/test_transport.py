@@ -31,7 +31,9 @@ async def eventually(predicate, timeout=8):
 )
 def test_real_webrtc_frames_audio_interrupt_and_disconnect():
     async def run():
-        config = Settings()
+        config = Settings(
+            avatar_catalog="research",
+        )
         worker = DemoWorker(
             f"integration-{time.time_ns()}", "ref01", config, Catalog(config)
         )
@@ -103,7 +105,9 @@ def test_real_webrtc_frames_audio_interrupt_and_disconnect():
 )
 def test_two_calls_keep_model_process_and_release_each_room(tmp_path):
     async def run():
-        config = Settings()
+        config = Settings(
+            avatar_catalog="research",
+        )
 
         def factory(command, log, **kwargs):
             return GPUProcess(
@@ -149,7 +153,9 @@ def test_chunk_publisher_over_webrtc_has_exact_coverage_cancel_and_stall(tmp_pat
     """Real transport and process boundary, with synthetic GPU output only."""
 
     async def run():
-        config = Settings()
+        config = Settings(
+            avatar_catalog="research",
+        )
         worker = DemoWorker(
             f"chunk-{time.time_ns()}",
             "ref01",

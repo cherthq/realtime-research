@@ -36,3 +36,6 @@ realtime/web/dist/
 realtime/web/test-results/
 realtime/web/playwright-report/
 *.tsbuildinfo
+
+# Private voice references
+*.mp3

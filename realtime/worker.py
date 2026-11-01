@@ -18,15 +18,22 @@ from .contracts import (
     FRAME_SAMPLES,
     HEIGHT,
     LIVE_VOICE_PENDING_SECONDS,
+    PUBLISH_FPS,
     SAMPLE_RATE,
     WIDTH,
     ResponseBuffer,
 )
 from .gpu_client import GPUProcess
+from .idle import IdlePlayer
 from .mock import MockRenderer
 from .playback import PlaybackLedger, TaggedVideoSource, tag
 from .streaming import take_batch
 from .voice_agent import VoiceAgent
+from .text_voice_agent import TextVoiceAgent
+from .camera import CameraInput
+from .transcripts import TranscriptLedger
+from .continuous import ContinuousRunner
+from .media_clock import AudioClock
 
 
 def room_token(
@@ -47,7 +54,7 @@ def room_token(
                 can_subscribe=True,
                 can_publish_data=worker,
                 can_publish_sources=["camera", "microphone"]
-                if worker
+                if worker or settings.camera_vision
                 else ["microphone"],
             )
         )
@@ -73,6 +80,12 @@ class DemoWorker:
         self.settings = settings
         self.catalog = catalog
         self.model_id = model_id
+        self.continuous_motion = (
+            settings.avatar_continuous_motion and model_id == "avatarforever"
+        )
+        self.continuous_runner = (
+            ContinuousRunner(self) if self.continuous_motion else None
+        )
         self.gpu_pool = gpu_pool
         self.renderer = (
             MockRenderer(catalog.image(avatar_id)) if model_id == "mock" else None
@@ -92,6 +105,11 @@ class DemoWorker:
                         if settings.avatarforever_compile_blocks
                         else []
                     ),
+                    *(
+                        ["--cache-prompt"]
+                        if settings.avatarforever_cache_prompt
+                        else []
+                    ),
                 ],
                 ROOT / "runs/realtime/sessions" / session_id / "gpu.log",
                 load_timeout=settings.gpu_load_timeout_seconds,
@@ -102,12 +120,18 @@ class DemoWorker:
         )
         self.avatar_id = avatar_id
         self.batches = asyncio.Queue(maxsize=2)
+        self.generation_ready = asyncio.Event()
         self.generate_task = None
         self.generated_frames = 0
         self.frame_hashes: set[bytes] = set()
         self.generation_seconds = 0.0
         self.control_task = None
+        self.caption_task = None
         self.held_frames = 0
+        self.idle_motion_frames = 0
+        self.first_chunk_started_at = None
+        self.first_chunk_decoded_at = None
+        self.first_chunk_published_at = None
         self.generating_epoch = None
         self.publishing_epoch = None
         self.playing_epoch = None
@@ -115,20 +139,31 @@ class DemoWorker:
         self.response_audio_until = 0.0
         self.stalls = 0
         self.buffer = ResponseBuffer(
-            max_pending_seconds=LIVE_VOICE_PENDING_SECONDS if voice_selection else 20
+            max_pending_seconds=LIVE_VOICE_PENDING_SECONDS if voice_selection else 20,
+            on_change=self.generation_ready.set,
         )
         self.playback = PlaybackLedger()
+        self.transcripts = TranscriptLedger()
+        self.camera = CameraInput()
         self.state_changed = asyncio.Event()
         self.room = rtc.Room()
         self.audio = rtc.AudioSource(SAMPLE_RATE, 1, queue_size_ms=100)
         self.video = TaggedVideoSource(
-            WIDTH, HEIGHT, self.playback, lambda: self.buffer.epoch
+            WIDTH,
+            HEIGHT,
+            self.playback,
+            lambda: self.buffer.epoch,
+            preserve_stale=self.continuous_motion,
         )
-        self.sync = rtc.AVSynchronizer(
-            audio_source=self.audio,
-            video_source=self.video,
-            video_fps=FPS,
-            video_queue_size_ms=80,
+        self.sync = (
+            AudioClock(self.audio, self.video, lambda: self.buffer.epoch)
+            if self.continuous_motion or self.model_id == "mock"
+            else rtc.AVSynchronizer(
+                audio_source=self.audio,
+                video_source=self.video,
+                video_fps=FPS,
+                video_queue_size_ms=80,
+            )
         )
         self.media_task: asyncio.Task | None = None
         self.mic_tasks: set[asyncio.Task] = set()
@@ -149,7 +184,11 @@ class DemoWorker:
         self.status = "preparing"
         self.last_scenario: str | None = None
         self.voice = (
-            VoiceAgent(settings, voice_selection["profile"], self)
+            (
+                TextVoiceAgent
+                if settings.tts_provider in {"qwen", "elevenlabs"}
+                else VoiceAgent
+            )(settings, voice_selection["profile"], self)
             if voice_selection
             else None
         )
@@ -163,6 +202,8 @@ class DemoWorker:
         elif self.gpu:
             await self.gpu.start()
             await self.gpu.open_session(self.id, self.catalog.image(self.avatar_id))
+            if self.settings.avatar_idle_motion and not self.continuous_motion:
+                await self.gpu.prepare_idle(self.catalog.image(self.avatar_id))
         self.last_presence = time.monotonic()
 
         @self.room.on("participant_connected")
@@ -174,6 +215,7 @@ class DemoWorker:
         @self.room.on("participant_disconnected")
         def left(participant):
             if participant.identity == "browser":
+                self.camera.clear()
                 self.connected_user = False
                 self.last_presence = time.monotonic()
 
@@ -186,6 +228,41 @@ class DemoWorker:
                 task = asyncio.create_task(self._microphone(track))
                 self.mic_tasks.add(task)
                 task.add_done_callback(self._mic_done)
+            elif (
+                self.voice
+                and self.settings.camera_vision
+                and participant.identity == "browser"
+                and publication.source == rtc.TrackSource.SOURCE_CAMERA
+                and track.kind == rtc.TrackKind.KIND_VIDEO
+            ):
+                self.camera.attach(track, publication.sid)
+
+        @self.room.on("track_unsubscribed")
+        def unsubscribed(track, publication, participant):
+            if (
+                participant.identity == "browser"
+                and publication.sid == self.camera.track_sid
+            ):
+                self.camera.clear()
+
+        @self.room.on("track_muted")
+        def muted(publication, participant):
+            if (
+                participant.identity == "browser"
+                and publication.sid == self.camera.track_sid
+            ):
+                self.camera.clear()
+
+        @self.room.on("track_unmuted")
+        def unmuted(publication, participant):
+            if (
+                self.voice
+                and self.settings.camera_vision
+                and participant.identity == "browser"
+                and publication.source == rtc.TrackSource.SOURCE_CAMERA
+                and publication.track
+            ):
+                self.camera.attach(publication.track, publication.sid)
 
         await self.room.connect(
             self.settings.livekit_url,
@@ -203,7 +280,7 @@ class DemoWorker:
                 simulcast=False,
                 frame_metadata_features=[rtc.FrameMetadataFeature.FMF_FRAME_ID],
                 video_encoding=rtc.VideoEncoding(
-                    max_framerate=FPS, max_bitrate=1_600_000
+                    max_framerate=PUBLISH_FPS, max_bitrate=1_600_000
                 ),
             ),
         )
@@ -215,15 +292,55 @@ class DemoWorker:
         )
         self.status = "listening"
         self.media_task = asyncio.create_task(
-            self._publish_gpu() if self.gpu else self._publish(),
+            self.continuous_runner.publish()
+            if self.continuous_runner
+            else self._publish_gpu()
+            if self.gpu
+            else self._publish(),
             name=f"media-{self.id}",
         )
         if self.gpu:
             self.generate_task = asyncio.create_task(
-                self._generate_gpu(), name=f"generate-{self.id}"
+                self.continuous_runner.generate()
+                if self.continuous_runner
+                else self._generate_gpu(),
+                name=f"generate-{self.id}",
             )
         if self.voice:
             await self.voice.start()
+        self.caption_task = asyncio.create_task(self._publish_captions())
+
+    async def _publish_captions(self):
+        # Room data avoids the Windows HTTP bridge's buffered polling route.
+        # HTTP snapshots remain the authoritative full-history recovery path.
+        revision = -1
+        while not self.closed:
+            self.transcripts.changed.clear()
+            snapshot = self.transcripts.snapshot()
+            if snapshot["revision"] != revision:
+                packet = {**snapshot, "utterances": snapshot["utterances"][-4:]}
+                encoded = json.dumps(packet).encode()
+                if len(encoded) <= 14000:
+                    try:
+                        await asyncio.wait_for(
+                            self.room.local_participant.publish_data(
+                                encoded,
+                                reliable=True,
+                                destination_identities=["browser"],
+                                topic="chert-captions",
+                            ),
+                            1,
+                        )
+                        revision = snapshot["revision"]
+                    except Exception:
+                        pass  # A caption outage must not interrupt paired media.
+            try:
+                await asyncio.wait_for(self.transcripts.changed.wait(), 0.5)
+            except asyncio.TimeoutError:
+                pass
+            await asyncio.sleep(
+                0.04
+            )  # Coalesce token bursts; no per-word task backlog.
 
     def _mic_done(self, task):
         self.mic_tasks.discard(task)
@@ -299,6 +416,26 @@ class DemoWorker:
     def estimated_played_ms(self):
         return self.playback.played_ms(self.buffer.epoch, self.server_played_ms())
 
+    def advance_captions(self, frame_id, audio_playing):
+        epoch = self.buffer.epoch
+        sent = self.playback.sent.get(frame_id)
+        # A subsequent idle frame confirms the end of the response, including
+        # its final partial audio frame. It cannot complete another epoch.
+        complete = bool(
+            sent
+            and sent[0] == epoch
+            and not sent[2]
+            and not self.response_active
+            and audio_playing
+            and self.voice
+            and self.voice.synthesized_samples > 0
+            and self.playback.positions.get(epoch, -2 * FRAME_SAMPLES)
+            >= self.voice.synthesized_samples - 2 * FRAME_SAMPLES
+        )
+        self.transcripts.advance(
+            epoch, int(self.estimated_played_ms() * 48), complete=complete
+        )
+
     async def interrupted_played_ms(self, epoch: int, estimate: int):
         if self.connected_user:
             with contextlib.suppress(asyncio.TimeoutError):
@@ -312,7 +449,10 @@ class DemoWorker:
             self.buffer.active
             or self.generating_epoch == epoch
             or self.publishing_epoch == epoch
-            or not self.batches.empty()
+            or bool(
+                self.continuous_runner and self.continuous_runner.pending_speech[epoch]
+            )
+            or (not self.continuous_motion and not self.batches.empty())
             or (
                 self.playing_epoch == epoch
                 and time.monotonic() < self.response_audio_until
@@ -330,15 +470,23 @@ class DemoWorker:
         self.playing_epoch = None
         self.last_response_publish = None
         self.response_audio_until = 0.0
-        await self.sync.clear_queue()
-        while not self.batches.empty():
-            self.batches.get_nowait()
-        if self.gpu:
+        if self.continuous_motion:
+            await self.sync.mute_audio()
+        else:
+            await self.sync.clear_queue()
+        if not self.continuous_motion:
+            while not self.batches.empty():
+                self.batches.get_nowait()
+        self.generation_ready.set()
+        if self.gpu and not self.continuous_motion:
             await self.gpu.cancel(self.buffer.epoch)
         if self.renderer:
             self.renderer.reset()
         self.status = "listening"
         self.request_time = None
+        self.first_chunk_started_at = None
+        self.first_chunk_decoded_at = None
+        self.first_chunk_published_at = None
         self.published_response_samples = 0
         if count:
             self.interruptions += 1
@@ -361,26 +509,34 @@ class DemoWorker:
     async def _generate_gpu(self):
         try:
             while not self.closed:
+                # Clear before the synchronous readiness check, so append/finish,
+                # cancellation and queue consumption cannot lose a wake-up.
+                self.generation_ready.clear()
                 if self.batches.full():
-                    await asyncio.sleep(0.02)
+                    await self.generation_ready.wait()
                     continue
                 chunk = take_batch(self.buffer)
                 if chunk is None:
-                    await asyncio.sleep(0.01)
+                    await self.generation_ready.wait()
                     continue
                 self.generating_epoch = chunk.epoch
+                if chunk.sample_start == 0:
+                    self.first_chunk_started_at = time.monotonic()
                 try:
                     batch = await self.gpu.generate(chunk)
                 finally:
                     self.generating_epoch = None
                 if batch is None or chunk.epoch != self.buffer.epoch:
                     continue
-                self.generated_frames += len(batch.frames)
-                self.frame_hashes.update(
-                    hashlib.sha256(frame).digest() for frame in batch.frames
-                )
-                self.generation_seconds += batch.compute_seconds
+                if chunk.sample_start == 0:
+                    self.first_chunk_decoded_at = time.monotonic()
                 await asyncio.wait_for(self.batches.put(batch), 5)
+                # Publish first. Full RGB hashing is diagnostic work, and scanning
+                # 23-29 MB here must not block voice events or first-frame playback.
+                hashes = await asyncio.to_thread(self._hash_frames, batch.frames)
+                self.frame_hashes.update(hashes)
+                self.generated_frames += len(batch.frames)
+                self.generation_seconds += batch.compute_seconds
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -388,17 +544,25 @@ class DemoWorker:
             self.status = "error"
             self.buffer.cancel()
 
+    @staticmethod
+    def _hash_frames(frames):
+        return {hashlib.sha256(frame).digest() for frame in frames}
+
     async def _publish_gpu(self):
         from PIL import Image, ImageOps
 
         with Image.open(self.catalog.image(self.avatar_id)) as image:
             last_frame = np.asarray(ImageOps.fit(image.convert("RGB"), (WIDTH, HEIGHT)))
+        idle = IdlePlayer(
+            self.gpu.idle_clip if self.settings.avatar_idle_motion else None
+        )
         stream_sample = 0
         silence = bytes(960 * 2)
         try:
             while not self.closed and not self.error:
                 try:
                     batch = self.batches.get_nowait()
+                    self.generation_ready.set()
                 except asyncio.QueueEmpty:
                     idle_started = time.monotonic()
                     waiting = self.response_active
@@ -416,10 +580,20 @@ class DemoWorker:
                     # Keep both RTP tracks continuous during listening/buffering.
                     # Sending occasional video without audio between replies can
                     # destabilize receiver playout after an idle gap. These are
-                    # held images and silence, never generated response coverage.
+                    # cached idle motion or held images, never response coverage.
+                    # Hold a real mid-reply gap rather than switching to listening
+                    # animation while speech generation is falling behind.
+                    animate = idle.clip is not None and not (
+                        waiting and self.playing_epoch == self.buffer.epoch
+                    )
+                    if animate:
+                        last_frame = idle.next(last_frame)
+                    else:
+                        idle.stop()
                     frame = rtc.VideoFrame(
                         WIDTH, HEIGHT, rtc.VideoBufferType.RGB24, last_frame.tobytes()
                     )
+                    tag(frame, self.buffer.epoch, 0, False)
                     await asyncio.wait_for(
                         self.sync.push(frame, stream_sample / SAMPLE_RATE), 2
                     )
@@ -431,7 +605,10 @@ class DemoWorker:
                             ),
                             2,
                         )
-                    self.held_frames += 1
+                    if animate:
+                        self.idle_motion_frames += 1
+                    else:
+                        self.held_frames += 1
                     stream_sample += FRAME_SAMPLES
                     self.status = "buffering" if waiting else "listening"
                     await asyncio.sleep(
@@ -439,6 +616,7 @@ class DemoWorker:
                     )
                     continue
                 self.publishing_epoch = batch.audio.epoch
+                idle.stop()
                 start = time.monotonic()
                 for index, rgb in enumerate(batch.frames):
                     if batch.audio.epoch != self.buffer.epoch or self.closed:
@@ -485,6 +663,8 @@ class DemoWorker:
                         self.last_response_publish + self.audio.queued_duration
                     )
                     self.status = "responding"
+                    if self.first_chunk_published_at is None:
+                        self.first_chunk_published_at = time.monotonic()
                     if self.first_media_ms is None and self.request_time is not None:
                         self.first_media_ms = (
                             time.monotonic() - self.request_time
@@ -503,8 +683,6 @@ class DemoWorker:
             self.publishing_epoch = None
 
     async def _publish(self):
-        start = time.monotonic()
-        stream_sample = 0
         try:
             while not self.closed:
                 audio = self.buffer.next()
@@ -520,20 +698,7 @@ class DemoWorker:
                     audio.sample_start if audio.valid_samples else 0,
                     bool(audio.valid_samples),
                 )
-                await asyncio.wait_for(
-                    self.sync.push(frame, stream_sample / SAMPLE_RATE), timeout=2
-                )
-                for offset in (0, 960):
-                    if audio.epoch != self.buffer.epoch:
-                        break
-                    part = audio.pcm[offset : offset + 960]
-                    await asyncio.wait_for(
-                        self.sync.push(
-                            rtc.AudioFrame(part.tobytes(), SAMPLE_RATE, 1, len(part)),
-                            (stream_sample + offset + len(part)) / SAMPLE_RATE,
-                        ),
-                        timeout=2,
-                    )
+                await asyncio.wait_for(self.sync.push_pair(frame, audio.pcm), timeout=2)
                 if audio.epoch != self.buffer.epoch:
                     continue
                 self.frames += 1
@@ -553,14 +718,6 @@ class DemoWorker:
                     self.status = "listening"
                 elif self.buffer.receiving:
                     self.status = "buffering"
-                stream_sample += len(audio.pcm)
-                # Keep a bounded wall-clock schedule rather than building an idle backlog.
-                deadline = start + stream_sample / SAMPLE_RATE
-                delay = deadline - time.monotonic()
-                if delay > 0:
-                    await asyncio.sleep(delay)
-                elif delay < -0.2:
-                    start = time.monotonic() - stream_sample / SAMPLE_RATE
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -588,6 +745,45 @@ class DemoWorker:
             else None,
             "generated_frames": self.generated_frames,
             "held_frames": self.held_frames,
+            "video_delayed": bool(
+                self.continuous_runner and self.continuous_runner.consecutive_holds >= 6
+            ),
+            "camera_shared": self.camera.frame is not None,
+            "hold_reasons": dict(self.continuous_runner.hold_reasons)
+            if self.continuous_runner
+            else {},
+            "max_consecutive_hold_ms": self.continuous_runner.max_consecutive_holds
+            * 1000
+            / FPS
+            if self.continuous_runner
+            else None,
+            "speech_underflow_frames": self.continuous_runner.speech_underflows
+            if self.continuous_runner
+            else None,
+            "speech_preroll_frames": self.continuous_runner.speech_preroll_frames
+            if self.continuous_runner
+            else None,
+            "startup_buffer_ms": round(self.continuous_runner.startup_buffer_ms, 2)
+            if self.continuous_runner
+            else None,
+            "gpu_roundtrip_fps": round(
+                self.generated_frames / self.continuous_runner.roundtrip_seconds, 2
+            )
+            if self.continuous_runner and self.continuous_runner.roundtrip_seconds
+            else None,
+            "max_video_capture_lateness_ms": round(self.sync.max_lateness_ms, 2)
+            if self.continuous_motion
+            else None,
+            "idle_motion_frames": self.idle_motion_frames,
+            "idle_motion_ready": bool(
+                self.continuous_motion
+                or (
+                    self.settings.avatar_idle_motion
+                    and self.gpu
+                    and self.gpu.idle_clip is not None
+                )
+            ),
+            "avatar_timing": self.avatar_timing(),
             "distinct_generated_frames": len(self.frame_hashes),
             "exact_duplicate_frames": self.generated_frames - len(self.frame_hashes),
             "distinct_generation_fps": round(
@@ -603,6 +799,10 @@ class DemoWorker:
             "gpu_memory": self.gpu.last_memory if self.gpu else None,
             "cold_load_seconds": self.gpu.load_seconds if self.gpu else None,
             "transport_fps": round(fps, 1) if math.isfinite(fps) else 0,
+            "video_max_fps": PUBLISH_FPS,
+            "geometry": {"width": WIDTH, "height": HEIGHT, "fps": FPS},
+            "native_model_fps": FPS,
+            "video_rate_limited_frames": self.video.rate_limited_frames,
             "frames_published": self.frames,
             "audio_queue_ms": round(self.audio.queued_duration * 1000, 1),
             "first_media_ms": round(self.first_media_ms, 1)
@@ -619,7 +819,17 @@ class DemoWorker:
             "connected_user": self.connected_user,
             "error": self.error,
             "last_scenario": self.last_scenario,
-            "voice_mode": "openai_realtime" if self.voice else "fixed_replay",
+            "voice_mode": (
+                f"openai_text_{self.settings.tts_provider}_tts"
+                if self.settings.tts_provider in {"qwen", "elevenlabs"}
+                else "openai_realtime"
+            )
+            if self.voice
+            else "fixed_replay",
+            "continuous_motion": self.continuous_motion,
+            "continuous_transitions": self.continuous_runner.transitions
+            if self.continuous_runner
+            else 0,
             "effective_voice": self.voice.effective_voice if self.voice else None,
             "voice_model": self.voice.resolved_model if self.voice else None,
             "voice_diagnostics": self.voice.diagnostics() if self.voice else None,
@@ -644,6 +854,26 @@ class DemoWorker:
             "timing_note": "Generation FPS excludes cold load and transport. Browser receipts confirm displayed frames and mute operations, not physical speaker timing.",
         }
 
+    def avatar_timing(self):
+        def interval(start, end):
+            if start is None or end is None or end < start:
+                return None
+            return round((end - start) * 1000, 2)
+
+        return {
+            "first_audio_to_gpu_request_ms": interval(
+                self.voice.first_audio_at if self.voice else self.request_time,
+                self.first_chunk_started_at,
+            ),
+            "first_chunk_roundtrip_ms": interval(
+                self.first_chunk_started_at, self.first_chunk_decoded_at
+            ),
+            "decoded_to_publish_ms": interval(
+                self.first_chunk_decoded_at, self.first_chunk_published_at
+            ),
+            "scope": "server monotonic; excludes VAD and browser playback",
+        }
+
     async def close(self):
         if self._closing is None:
             self._closing = asyncio.create_task(
@@ -656,9 +886,12 @@ class DemoWorker:
 
     async def _close(self):
         self.closed = True
+        self.transcripts.close()
         self.status = "closing"
         self.buffer.cancel()
         try:
+            with contextlib.suppress(Exception):
+                await self.camera.close()
             with contextlib.suppress(Exception):
                 await self.sync.clear_queue()
             if self.gpu and not self.gpu.closed:
@@ -678,6 +911,7 @@ class DemoWorker:
                 + ([self.media_task] if self.media_task else [])
                 + ([self.generate_task] if self.generate_task else [])
                 + ([self.control_task] if self.control_task else [])
+                + ([self.caption_task] if self.caption_task else [])
             )
             for task in tasks:
                 task.cancel()

@@ -67,7 +67,9 @@ test('browser flash/tone sync and interruption through actual WebRTC playback', 
       // Observe the real post-gate output graph, without replacing its source or
       // routing. HTML audio elements are deliberately silent under webAudioMix.
       const nodes = (window as any).outputAnalysers;
-      if (nodes.length !== 1) throw new Error('Expected exactly one remote output analyser');
+      // Created first: post-gate output meter. The second meter watches decoded
+      // PCM before the gate solely to decide when speech video can be released.
+      if (nodes.length !== 2) throw new Error('Expected output and readiness analysers');
       const { context, analyser } = nodes[0] as { context: AudioContext; analyser: AnalyserNode };
       if (context.state !== 'running') throw new Error('Output context is not running');
       const samples = new Float32Array(analyser.fftSize);

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import mmap
+import os
 import queue
 import sys
 import threading
@@ -13,12 +15,14 @@ from pathlib import Path
 import numpy as np
 
 from realtime.avatarforever import verify_installation
-from realtime.contracts import AudioChunk, FRAME_SAMPLES
-from realtime.gpu.wire import encode, read
-from realtime.streaming import chunk_frames
+from realtime.contracts import AudioChunk, FPS, FRAME_SAMPLES, HEIGHT, WIDTH
+from realtime.gpu.wire import MAX_BODY, read, write
+from realtime.streaming import chunk_frames, LOOKAHEAD_SAMPLES
 
 
 def serve(backend, incoming, outgoing):
+    descriptor = os.environ.get("CHERT_GPU_FRAME_BUFFER_FD")
+    frame_buffer = mmap.mmap(int(descriptor), MAX_BODY) if descriptor else None
     jobs = queue.Queue(maxsize=1)
     lock = threading.Lock()
     write_lock = threading.Lock()
@@ -27,8 +31,7 @@ def serve(backend, incoming, outgoing):
 
     def send(header, body=b""):
         with write_lock:
-            outgoing.write(encode(header, body))
-            outgoing.flush()
+            write(outgoing, header, body)
 
     def generate():
         current_epoch = None
@@ -65,14 +68,26 @@ def serve(backend, incoming, outgoing):
                     pass
                 else:
                     if current_epoch != header["epoch"]:
-                        backend.reset()
+                        if not header.get("continuous", False):
+                            backend.reset()
                         current_epoch = header["epoch"]
                     audio = AudioChunk(
                         header["response_id"],
                         header["epoch"],
                         header["sample_start"],
-                        np.frombuffer(body, dtype="<i2").copy(),
+                        np.frombuffer(
+                            body,
+                            dtype="<i2",
+                            count=chunk_frames(header["sample_start"]) * FRAME_SAMPLES,
+                        ).copy(),
                         header["valid_samples"],
+                        np.frombuffer(
+                            body,
+                            dtype="<i2",
+                            offset=chunk_frames(header["sample_start"])
+                            * FRAME_SAMPLES
+                            * 2,
+                        ).copy(),
                     )
                     result = backend.generate(audio, cancelled)
                     if not cancelled.is_set():
@@ -84,7 +99,17 @@ def serve(backend, incoming, outgoing):
                         }
                         if hasattr(backend, "metrics"):
                             reply["memory"] = backend.metrics()
-                        payload = result.frames.tobytes()
+                        # Native RGB is normally contiguous. Preserve the same
+                        # bytes for adapters returning a valid strided array too.
+                        payload = memoryview(np.ascontiguousarray(result.frames)).cast(
+                            "B"
+                        )
+                        if frame_buffer is not None:
+                            if payload.nbytes > MAX_BODY:
+                                raise ValueError("Shared frame payload exceeds bound")
+                            frame_buffer[: payload.nbytes] = payload
+                            reply["frame_bytes"] = payload.nbytes
+                            payload = b""
             except Exception as exc:
                 if cancelled.is_set():
                     pass
@@ -107,7 +132,14 @@ def serve(backend, incoming, outgoing):
 
     thread = threading.Thread(target=generate, name="avatar-gpu", daemon=True)
     thread.start()
-    send({"type": "ready", **backend.info()})
+    send(
+        {
+            "type": "ready",
+            **backend.info(),
+            "geometry": {"width": WIDTH, "height": HEIGHT, "fps": FPS},
+            "frame_transport": "mmap" if frame_buffer is not None else "pipe",
+        }
+    )
     try:
         while True:
             header, body = read(incoming)
@@ -155,10 +187,20 @@ def serve(backend, incoming, outgoing):
                         or type(valid) is not int
                         or not isinstance(response, str)
                         or not 1 <= len(response) <= 200
+                        or type(header.get("continuous", False)) is not bool
                     ):
                         raise ValueError("Invalid chunk identity")
                     samples = chunk_frames(position) * FRAME_SAMPLES
-                    if len(body) != samples * 2 or not 0 < valid <= samples:
+                    lookahead = header.get("lookahead_samples", 0)
+                    if type(lookahead) is not int or lookahead not in (
+                        0,
+                        LOOKAHEAD_SAMPLES,
+                    ):
+                        raise ValueError("Invalid conditioning lookahead")
+                    if (
+                        len(body) != (samples + lookahead) * 2
+                        or not 0 < valid <= samples
+                    ):
                         raise ValueError("Invalid chunk coverage")
                     cancelled = threading.Event()
                     if epoch < state["minimum_epoch"]:
@@ -177,6 +219,8 @@ def serve(backend, incoming, outgoing):
         thread.join(timeout=5)
         if not thread.is_alive():
             backend.close()
+            if frame_buffer is not None:
+                frame_buffer.close()
 
 
 def main():
@@ -188,6 +232,17 @@ def main():
         action="store_true",
         help="Compile and warm repeated transformer blocks before readiness",
     )
+    parser.add_argument(
+        "--cache-prompt",
+        action="store_true",
+        help="Cache fixed-prompt projections per denoising step before readiness",
+    )
+    parser.add_argument(
+        "--listening-profile",
+        choices=("off", "onset_boost"),
+        default="off",
+        help="Experimental quiet listening with a two-chunk speech-onset cue",
+    )
     args = parser.parse_args()
     # Preserve binary stdout before redirecting third-party progress messages.
     outgoing = sys.stdout.buffer
@@ -197,7 +252,11 @@ def main():
 
         started = time.monotonic()
         backend = AvatarForeverBackend(
-            args.weights, args.image, compile_blocks=args.compile_blocks
+            args.weights,
+            args.image,
+            compile_blocks=args.compile_blocks,
+            cache_prompt=args.cache_prompt,
+            listening_profile=args.listening_profile,
         )
         print(
             f"Avatar loaded in {time.monotonic() - started:.2f}s",

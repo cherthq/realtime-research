@@ -1,4 +1,5 @@
 import json
+import re
 import wave
 
 import numpy as np
@@ -9,23 +10,55 @@ from .config import ROOT, Settings
 class Catalog:
     def __init__(self, settings: Settings):
         self.settings = settings
+        self.bundled = settings.avatar_catalog == "demo"
+        self.image_root = (
+            ROOT / "realtime/demo-avatars" if self.bundled else settings.assets_dir
+        )
         self.portraits = {
             p["id"]: p
             for p in json.loads(
                 (ROOT / "configs/zero_shot_portraits.json").read_text()
             )["portraits"]
         }
+        if self.bundled:
+            # Public demos never read private portrait libraries or assignments.
+            self.portraits = {
+                p["id"]: {
+                    **p,
+                    "path": p["image"],
+                    "image_sha256": p["sha256"],
+                    "elevenlabs_voice_id": p["voice_id"],
+                    "synthetic": False,
+                }
+                for p in json.loads((self.image_root / "manifest.json").read_text())[
+                    "portraits"
+                ]
+            }
         self.scenarios = {
             s["id"]: s
             for s in json.loads((ROOT / "configs/zero_shot_suite.json").read_text())[
                 "scenarios"
             ]
         }
+        # Demo portraits stay separate from the frozen zero-shot benchmark.
+        library = settings.state_dir / "avatar-library.json"
+        if not self.bundled and library.is_file():
+            for portrait in json.loads(library.read_text(encoding="utf-8"))[
+                "portraits"
+            ]:
+                ident = portrait.get("id", "")
+                if (
+                    not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", ident)
+                    or ident in self.portraits
+                ):
+                    raise ValueError("Invalid or duplicate demo avatar ID")
+                self.portraits[ident] = portrait
+                self.image(ident)  # Validate containment before exposing the catalog.
 
     def image(self, avatar_id: str):
         portrait = self.portraits[avatar_id]
-        path = (self.settings.assets_dir / portrait["path"]).resolve()
-        if not path.is_relative_to(self.settings.assets_dir.resolve()):
+        path = (self.image_root / portrait["path"]).resolve()
+        if not path.is_relative_to(self.image_root.resolve()):
             raise ValueError("Portrait path outside assets directory")
         return path
 
@@ -64,10 +97,11 @@ class Catalog:
         return [
             {
                 "id": name,
-                "name": f"Character {i + 1:02}",
+                "name": p.get("name", f"Character {i + 1:02}"),
                 "image_url": f"/api/avatars/{name}/image",
                 "image_available": self.image(name).is_file(),
-                "synthetic": bool(p["synthetic"]),
+                "synthetic": bool(p.get("synthetic", False)),
+                "note": p.get("note", ""),
                 "casting_status": "not_configured"
                 if not self.settings.openai_api_key.get_secret_value()
                 else "not_cast",
