@@ -1,17 +1,35 @@
-# Chert realtime avatar demo
+<p align="center">
+  <a href="https://www.trychert.com/"><img src="docs/assets/chert-logo.png" alt="Chert" width="88" height="88"></a>
+</p>
+
+<h1 align="center">Chert Realtime Avatars</h1>
+
+<p align="center"><strong>A self-hosted platform for real-time conversations with AI avatars.</strong></p>
+
+<p align="center">
+  <a href="https://dunlichan.com/projects/chert/"><img src="https://img.shields.io/badge/Demo-Try%20it-28724f" alt="Try the live demo"></a>
+  <a href="https://www.trychert.com/"><img src="https://img.shields.io/badge/Chert-Website-222222" alt="Chert website"></a>
+  <a href="realtime/QUALIFICATION.md"><img src="https://img.shields.io/badge/status-experimental-e69838" alt="Experimental"></a>
+</p>
 
 A browser video call with a generated avatar: speak, interrupt, share your camera,
 and read live captions. AvatarForever runs on your GPU; OpenAI handles conversation
 and vision, ElevenLabs generates speech, and LiveKit Cloud carries audio/video.
 
-Ten reference portraits and stock-voice assignments are included. API keys, model
-weights, recordings and private character assets are not included.
+Ten reference portraits and stock-voice assignments are included. Model weights,
+private character assets and API keys stay on your server.
+
+> [!NOTE]
+> The browser receives only session-scoped connection details. Keep provider keys
+> in the backend’s private environment file.
 
 ## Demo
 
-The interface has a large avatar, an inset self-camera, fading captions and call
-controls underneath. Swap the camera views or choose another avatar in Settings.
-A recorded walkthrough will be added when it is ready.
+Watch a conversation with live captions, interruption and an animated avatar.
+
+https://github.com/user-attachments/assets/953b779c-8f33-426b-8076-3ae8d0138d2b
+
+**[Try the live demo →](https://dunlichan.com/projects/chert/)**
 
 ## Set up
 
