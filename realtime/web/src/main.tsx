@@ -298,7 +298,7 @@ function App({
   const queue = useCallQueue(queueRequired);
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [cases, setCases] = useState<Scenario[]>([]);
-  const [avatarId, setAvatarId] = useState('call01');
+  const [avatarId, setAvatarId] = useState('call07'); // Brick room
   const [health, setHealth] = useState<Health | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
@@ -332,7 +332,8 @@ function App({
   const history = useRef<HTMLDialogElement>(null);
   // Choose the initial default only; resizing must preserve the user's toggle.
   const [showCaptions, setShowCaptions] = useState(
-    () => !window.matchMedia('(max-width: 760px)').matches,
+    () =>
+      !window.matchMedia('(max-width: 760px), (max-height: 500px) and (pointer: coarse)').matches,
   );
   const [showTimer, setShowTimer] = useState(true);
   const [cameraLarge, setCameraLarge] = useState(false);
@@ -1150,17 +1151,12 @@ function App({
               <span className="start-label">{startLabel}</span>
             </button>
           )}
-          {queue.place?.state === 'ready' && !pending && !session && (
-            <button
-              className="icon-control"
-              onClick={() => void queue.leave()}
-              aria-label="Leave queue"
-              title="Leave queue"
-            >
-              <Icon name="close" />
-            </button>
-          )}
         </div>
+        {queue.place?.state === 'ready' && !pending && !session && (
+          <button className="queue-leave" onClick={() => void queue.leave()}>
+            Leave queue
+          </button>
+        )}
         {soundBlocked && (
           <button
             className="enable-sound"

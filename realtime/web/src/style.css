@@ -92,6 +92,22 @@ svg {
 .queue-notice {
   text-align: center;
 }
+.queue-leave {
+  display: flex;
+  min-height: 44px;
+  margin: 6px auto 0;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.queue-leave:hover,
+.queue-leave:active {
+  color: #fff;
+}
 .video-pair {
   --preview-width: clamp(112px, 18%, 184px);
   --preview-inset: 20px;
@@ -961,18 +977,17 @@ legend,
     background: #0005;
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .call-page,
   .call-page.has-queue {
-    width: calc(100% - 24px);
-  }
-  .has-queue .call-controls {
-    flex-wrap: wrap;
-  }
-  .call-page {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    width: calc(100% - 24px);
+    width: min(
+      560px,
+      calc(100% - max(12px, env(safe-area-inset-left)) - max(12px, env(safe-area-inset-right))),
+      max(296px, calc((100dvh - 136px) * 4 / 3))
+    );
     min-height: 100dvh;
     padding: max(16px, env(safe-area-inset-top)) 0 max(16px, env(safe-area-inset-bottom));
   }
@@ -980,22 +995,22 @@ legend,
     flex-shrink: 0;
   }
   .video-pair {
-    --preview-width: 92px;
-    --preview-inset: 16px;
+    --preview-width: clamp(72px, 24%, 100px);
+    --preview-inset: 12px;
     display: block;
   }
   .stage-overlay {
     position: absolute;
     inset: 0;
     aspect-ratio: auto;
-    border-radius: 23px;
+    border-radius: 20px;
   }
   .large-tile {
-    border-radius: 23px;
+    border-radius: 20px;
   }
   /* Keep the same 4:3 stage and uncropped avatar media as desktop. */
   .small-tile {
-    border-radius: 14px;
+    border-radius: 12px;
   }
   .local-tile.small-tile .camera-placeholder {
     padding: 8px 8px 22px;
@@ -1011,29 +1026,44 @@ legend,
     display: none;
   }
   .stage-header {
-    padding: 20px calc(var(--preview-width) + var(--preview-inset) + 12px) 50px 20px;
+    padding: 14px calc(var(--preview-width) + var(--preview-inset) + 10px) 32px 14px;
     align-items: flex-start;
   }
-  .wordmark {
-    font-size: 24px;
+  .stage-brand {
+    padding: 24px 14px 12px;
+  }
+  .large-tile .wordmark {
+    font-size: 18px;
     gap: 6px;
   }
-  .wordmark img {
-    width: 26px;
-    height: 26px;
+  .large-tile .wordmark img {
+    width: 22px;
+    height: 22px;
   }
   .call-status {
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: 6px;
     font-size: 11px;
   }
+  .call-status > [role='status'] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .call-status .status-dot,
   .call-status time {
-    margin-left: 2px;
-    padding-left: 9px;
+    flex-shrink: 0;
+  }
+  .call-status time {
+    margin-left: 0;
+    padding-left: 6px;
   }
   .live-captions {
-    left: 16px;
-    right: 16px;
-    bottom: 64px;
-    max-height: 31%;
+    left: 14px;
+    right: 14px;
+    bottom: 44px;
+    max-height: 28%;
   }
   .live-caption {
     font-size: 13px;
@@ -1041,24 +1071,29 @@ legend,
     max-width: 94%;
   }
   .large-tile > .tile-caption {
-    padding-left: 20px;
-    padding-right: 20px;
+    padding: 24px 14px 12px;
   }
   .video-delay {
-    top: 106px;
-    left: 20px;
+    top: 44px;
+    left: 14px;
   }
   .call-footer {
     padding: 14px 0 0;
   }
   .call-controls {
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(44px, 1fr));
+    justify-items: center;
+    gap: 6px;
+    width: 100%;
+    max-width: 344px;
+    margin: 0 auto;
   }
   .call-controls .icon-control,
   .call-controls .call-button {
-    width: 46px;
-    height: 46px;
-    min-height: 46px;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
     padding: 0;
   }
   .start-label {
@@ -1069,33 +1104,80 @@ legend,
     overflow: hidden;
   }
   .call-note {
-    font-size: 10px;
+    font-size: 11px;
     margin-top: 12px;
   }
-  .settings-dialog {
-    width: auto;
-    left: 12px;
-    right: 12px;
-    bottom: max(100px, calc(84px + env(safe-area-inset-bottom)));
-    max-height: calc(100dvh - 124px);
+  .settings-dialog,
+  .history-dialog {
+    top: auto;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 0;
+    right: 0;
+    width: min(480px, calc(100% - 24px));
+    max-height: calc(
+      100dvh - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom))
+    );
+    margin: 0 auto;
+    overscroll-behavior: contain;
+    scroll-padding-top: 80px;
   }
   .dialog-content {
     padding: 16px;
   }
-}
-@media (max-width: 350px) {
-  .call-controls {
-    gap: 6px;
+  .dialog-header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin: -16px -16px 16px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    background: #252629;
   }
+  .avatar-choices {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    max-height: none;
+    overflow: visible;
+  }
+  .avatar-choices button {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    aspect-ratio: auto;
+    text-align: left;
+  }
+  .avatar-choices img {
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+  .avatar-choices span {
+    position: static;
+    padding: 8px;
+    border-radius: 0;
+    background: #202125;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .settings-dialog select {
+    font-size: 16px;
+  }
+  .voice-actions {
+    flex-wrap: wrap;
+  }
+}
+@media (min-width: 375px) and (max-width: 760px) and (min-height: 400px) {
   .call-controls .icon-control,
   .call-controls .call-button {
-    width: 44px;
-    height: 44px;
-    min-height: 44px;
+    width: 48px;
+    height: 48px;
+    min-height: 48px;
   }
-  .video-pair {
-    --preview-width: 78px;
-    --preview-inset: 12px;
+}
+@media (hover: none) {
+  .icon-control:hover:not(:disabled),
+  .call-button:hover:not(:disabled) {
+    transform: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -99,7 +99,14 @@ test('avatar library selects its saved voice, previews overrides, and stays usab
     await page.setViewportSize({ width, height: 960 });
     await page.getByRole('button', { name: 'Select Call portrait 13', exact: true }).click();
     const box = (await picker.boundingBox())!;
-    expect(box.height).toBeLessThanOrEqual(268);
+    if (width > 760) {
+      expect(box.height).toBeLessThanOrEqual(268);
+    } else {
+      // Phones use the sheet's scroll area, so the gallery has no nested scrollbar.
+      expect(await picker.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+      const close = page.getByRole('button', { name: 'Close settings', exact: true });
+      await expect(close).toBeInViewport();
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
     await expect(
       page.getByRole('button', { name: 'Select Call portrait 13', exact: true }),
