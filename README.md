@@ -27,48 +27,73 @@ https://github.com/user-attachments/assets/953b779c-8f33-426b-8076-3ae8d0138d2b
 
 **[Try the live demo →](https://dunlichan.com/projects/chert/)**
 
-One person can call at a time. Join the waiting queue when the demo is busy;
-your position updates automatically, with 30 seconds to start when it is your turn.
+The public demo supports **one caller at a time**. If it is busy, join the queue;
+your position updates automatically. You have 30 seconds to start when your turn arrives.
 
-## Set up
+## Quickstart
 
-Use an Ubuntu GPU host with an H100 80 GB, Python 3.11, Node.js 22.12+, FFmpeg and
-at least 150 GB free disk space. You need LiveKit Cloud, OpenAI and ElevenLabs
-credentials, plus Hugging Face access to the required Gemma text encoder.
+### Requirements
 
-1. Clone this repository and install the app dependencies.
-2. Build the web client with `npm ci && npm run build` in `realtime/web`.
-3. Run the GPU setup script and download the pinned AvatarForever/Gemma weights.
-4. Copy `realtime/.env.example` to `realtime/.env` and fill the private credentials.
-5. Start the demo host, prewarm the model, and connect through SSH or HTTPS.
+| Component | Required |
+| --- | --- |
+| GPU host | Ubuntu x86_64, H100 80 GB, at least 150 GB free storage |
+| Software | Git, Python 3.11 with venv, Node.js 22.12+, FFmpeg |
+| Services | LiveKit Cloud, OpenAI and ElevenLabs credentials |
+| Model access | Hugging Face access to the [Gemma text encoder](https://huggingface.co/google/gemma-3-12b-it-qat-q4_0-unquantized) |
 
-**[Copy-and-paste setup instructions →](docs/recreate-demo.md)**
+### Install
 
-For a public domain, use the [HTTPS deployment guide](docs/public-demo.md).
-Secrets stay on the backend; the browser receives only a short-lived room token
+Run on your GPU host:
+
+```bash
+git clone https://github.com/cherthq/realtime-research.git
+cd realtime-research
+python3.11 -m venv .venv-realtime
+.venv-realtime/bin/python -m pip install -r realtime/requirements.txt -c realtime/constraints-linux-py311.txt
+cd realtime/web
+npm ci
+npm run build
+cd ../..
+```
+
+### Configure and run
+
+1. **Prepare the model.** Run the [GPU setup script](infra/setup-avatarforever.sh)
+   and download the pinned AvatarForever and Gemma weights.
+2. **Add credentials.** Copy [realtime/.env.example](realtime/.env.example) to
+   `realtime/.env` and configure the providers and GPU worker. Keep this file private.
+3. **Start the application.** Prepare the host, start the server and prewarm the
+   model, then open the web app through an SSH tunnel or HTTPS.
+
+The setup guide includes the commands and configuration for each step:
+
+**[Complete setup →](docs/recreate-demo.md)** · **[Deploy on a public domain →](docs/public-demo.md)**
+
+Provider keys stay on the server. The browser receives a short-lived room token
 and a key scoped to its own call.
 
-## What is included
+## Repository guide
 
-| Directory | Purpose |
+| Directory | Contents |
 | --- | --- |
 | [realtime/](realtime/README.md) | Web app, voice agent, streaming worker and tests |
-| [realtime/demo-avatars/](realtime/demo-avatars/README.md) | Ten demo reference images and stock voices |
-| [data_fetching/](data_fetching/README.md) | Review-first 4:3 talking-video preparation pipeline |
-| [configs/](configs/models.json) and [scripts/](scripts/workspace.py) | Pinned model sources and baseline tooling |
+| [realtime/demo-avatars/](realtime/demo-avatars/README.md) | Ten reference portraits and stock voice assignments |
+| [data_fetching/](data_fetching/README.md) | 4:3 talking-video preparation and review pipeline |
+| [configs/](configs/models.json) · [scripts/](scripts/workspace.py) | Pinned model sources and baseline tools |
 | [infra/](infra/lambda.md) | GPU setup and deployment helpers |
 
-The existing [model baseline workflow](docs/running-baselines.md) and
-[zero-shot protocol](docs/zero-shot-baseline.md) remain separate from the live demo.
-No dataset collection, download or training starts automatically.
+For model comparisons, follow the [baseline workflow](docs/running-baselines.md)
+and [zero-shot evaluation protocol](docs/zero-shot-baseline.md). Dataset preparation,
+evaluation and training are separate from running a call.
 
-## Current limits
+## Known limitations
 
-This is an experimental **one-call-per-GPU** demo with a ten-minute call limit,
-not a production capacity claim. Long calls can drift visually; idle mouth
-motion and lip-sync are not perfect. See [tested scope and limitations](realtime/QUALIFICATION.md).
-The stream uses 4:3 geometry and a 24 FPS publication cap. Lower resolution can
-reduce compute but is not a cure for drift.
+- **Capacity:** the current deployment serves one call per GPU, with a ten-minute call limit.
+- **Visual quality:** long calls can drift; idle mouth motion and lip-sync remain imperfect.
+- **Playback:** output uses 4:3 framing with a 24 FPS publication cap. Actual performance
+  depends on the GPU and configuration; lower resolution does not resolve visual drift.
 
-Upstream models and reference images retain their own terms. The bundled stock
-voices are creative casting choices, not clones of the pictured people.
+See [validation results and tested scope](realtime/QUALIFICATION.md) before deploying.
+
+Upstream models and reference images retain their own terms. Bundled voices are
+stock voice selections, not clones of the people in the portraits.
