@@ -6,13 +6,14 @@ provider. It does not change AvatarForever, video timing or interruption handlin
 
 ## Controls
 
-The conversation instructions in `realtime/voice_agent.py` favor a direct,
-specific response in one or two short sentences, with contractions and ordinary
-spoken language. Relevant follow-up questions are allowed, but generic praise,
-service-style closers and unrequested advice are discouraged. Requested detailed
-answers remain available. English is still the default; there is no application
-output-token ceiling. The agent must remain honest about being AI and what it
-can actually see or remember.
+`CONVERSATION_STYLE` in `realtime/voice_agent.py` uses a calm, candid,
+slightly dry tone, with brief examples of ordinary conversation. It favors a
+direct response in one or two short sentences, sometimes just a few words.
+Questions should follow a specific topic rather than act as automatic closers.
+Routine praise, coaching, performed hesitation and forced slang are discouraged.
+Requested detailed answers remain available. English is still the default;
+there is no application output-token ceiling. The separate grounding instructions
+preserve honesty about being AI and what the agent can actually see or remember.
 
 Two optional backend settings control speech delivery:
 
@@ -103,6 +104,44 @@ for listening; generated recordings and raw experiment output stay Git-ignored.
 The audio-tag probe returned the tag in alignment text. Automatic tags, fake
 laughs and filler insertion were therefore not enabled. They need separate
 caption handling and perceptual evaluation before use.
+
+### Follow-up: less formulaic sentences
+
+After feedback about the wording, four prompt candidates were compared with the
+deployed prompt on four six-turn conversations, repeated twice. The topics were
+everyday updates, venting, technical explanations and camera/identity/memory
+boundaries. Each conversation kept the model's own previous responses in context.
+The first three candidates still produced conspicuous coaching or stock phrases.
+The selected version uses fewer rules and a more understated conversational role.
+
+The selected prompt was then compared with the deployed prompt on two fresh
+six-turn conversations, repeated twice: a missed bus and a disappointing dinner.
+These topics were not used to revise the prompt. Across development and this
+final check, 288 responses completed with the same `gpt-realtime` model. No
+second rewriting model, token ceiling or speech-provider change was introduced.
+
+| Fresh-topic check | Previous prompt | Selected prompt |
+| --- | ---: | ---: |
+| Responses | 24 | 24 |
+| Median words, excluding requested elaboration | 14.5 | 7 |
+| Responses containing an exclamation mark | 4 | 0 |
+| Responses containing a question | 10 | 10 |
+
+For “I tried making pasta tonight,” one previous reply was “Nice! How did it turn
+out?” and the selected version replied “How'd it turn out?” For a request to
+explain *al dente*, it gave a direct definition and expanded when asked.
+
+These counts describe this small text-only probe, not a naturalness score.
+Questions remain common, and some generic wording remains. Shorter or drier
+replies can also feel abrupt. Camera-off replies did not invent a visible object,
+AI identity was retained, and the chemistry/bus memory checks were answered
+correctly in the selected runs. This is limited evidence, not comprehensive
+factual or safety qualification. The separate live call check covers transport;
+listener feedback is still needed to judge the conversational style.
+
+Raw runs and the local side-by-side transcript page are kept under ignored
+`.cache/conversation-prompt-20261103/`. Only the selected prompt and this summary
+are part of the public repository.
 
 ## Why these changes
 
