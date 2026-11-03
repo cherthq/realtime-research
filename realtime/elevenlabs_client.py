@@ -198,6 +198,10 @@ class ElevenLabsTTSClient:
             nonlocal finished_input
             voice = self.voice_id
             opening = {"voices": [voice]} if self.dialogue else {"text": " "}
+            if self.settings.elevenlabs_stability is not None:
+                opening["voice_settings"] = {
+                    "stability": self.settings.elevenlabs_stability
+                }
             await self._send({"context_id": ident, **opening})
             async for text in phrases:
                 if not text.strip():

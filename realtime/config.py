@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     elevenlabs_api_key: SecretStr = SecretStr("")
     elevenlabs_voice_id: str = ""
     elevenlabs_model: str = "eleven_v4_turbo"
+    # None preserves the provider's voice default. Only stability is wired for
+    # dialogue WS; settings from other endpoints are not assumed compatible.
+    elevenlabs_stability: float | None = Field(default=None, ge=0, le=1)
+    elevenlabs_phrase_wait_ms: int = Field(default=120, ge=0, le=250)
     input_transcription_model: str = "gpt-live-transcribe"
     input_transcription_language: str = "en"
     camera_vision: bool = True

@@ -97,6 +97,42 @@ def settings(model="eleven_flash_v2_5"):
 
 
 @pytest.mark.parametrize("model", ["eleven_flash_v2_5", "eleven_v4_turbo"])
+@pytest.mark.parametrize("stability", [None, 0.0, 0.4, 1.0])
+def test_stability_is_only_sent_on_speaking_context_registration(model, stability):
+    async def run():
+        config = settings(model)
+        config.elevenlabs_stability = stability
+        socket = DialogueSocket() if "v4" in model else Socket()
+
+        async def connector(*args, **kwargs):
+            return socket
+
+        client = ElevenLabsTTSClient(config, connector=connector)
+
+        async def phrases():
+            yield "Hi"
+
+        try:
+            assert [chunk async for chunk in client.stream_response(phrases())]
+            overrides = [b for b in socket.sent if "voice_settings" in b]
+            if stability is None:
+                assert not overrides
+            else:
+                assert len(overrides) == 1
+                assert overrides[0]["voice_settings"] == {"stability": stability}
+                assert "inputs" not in overrides[0]
+                assert "flush" not in overrides[0]
+            # Defaults and unrelated provider parameters are never silently added.
+            assert not any(
+                "similarity_boost" in b.get("voice_settings", {}) for b in socket.sent
+            )
+        finally:
+            await client.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("model", ["eleven_flash_v2_5", "eleven_v4_turbo"])
 def test_portrait_specific_voice_is_isolated_per_client(model):
     async def run():
         config = settings(model)

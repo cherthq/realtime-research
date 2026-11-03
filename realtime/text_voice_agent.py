@@ -46,12 +46,14 @@ class TextPhrases:
         return result
 
 
-async def speech_text(phrases):
-    """Coalesce text already available; never wait to fill a synthesis request.
+async def speech_text(phrases, *, max_wait_seconds=0.0):
+    """Coalesce available text, optionally giving unfinished clauses a deadline.
 
     Text generation often finishes while the previous phrase is being spoken.
     Sending each queued clause separately then repeats prefill and starves the
-    avatar of audio. Preserve order, the finish sentinel and the 180-char bound.
+    avatar of audio. Complete sentences and finished replies do not wait. One
+    absolute deadline bounds the wait across all fragments, including cancellation.
+    Preserve order, the finish sentinel and the 180-char bound.
     """
     carry = ""
     while True:
@@ -60,11 +62,20 @@ async def speech_text(phrases):
         if text is None:
             return
         finished = False
+        deadline = asyncio.get_running_loop().time() + max_wait_seconds
         while len(text) < 180:
             try:
                 extra = phrases.get_nowait()
             except asyncio.QueueEmpty:
-                break
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0 or re.search(
+                    r'[.!?]["\u201d\u2019\')\]]*$', text.rstrip()
+                ):
+                    break
+                try:
+                    extra = await asyncio.wait_for(phrases.get(), remaining)
+                except asyncio.TimeoutError:
+                    break
             if extra is None:
                 finished = True
                 break
@@ -215,7 +226,12 @@ class TextVoiceAgent(VoiceAgent):
 
     async def _speak(self, response_id, epoch, phrases):
         try:
-            texts = speech_text(phrases)
+            texts = speech_text(
+                phrases,
+                max_wait_seconds=self.settings.elevenlabs_phrase_wait_ms / 1000
+                if self.settings.tts_provider == "elevenlabs"
+                else 0,
+            )
             first = await anext(texts, None)
             if first is None:
                 # Tool-only replies have no speech. Do not open an empty TTS

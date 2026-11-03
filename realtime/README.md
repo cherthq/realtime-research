@@ -5,6 +5,7 @@ AvatarForever worker → synchronized audio/video over LiveKit Cloud → browser
 
 **[Setup instructions](../docs/recreate-demo.md)** ·
 **[Public HTTPS deployment](../docs/public-demo.md)** ·
+**[Conversation and voice tuning](../docs/natural-conversation.md)** ·
 **[Known limitations](QUALIFICATION.md)**
 
 The client includes picture-in-picture camera, swappable views, device selection,

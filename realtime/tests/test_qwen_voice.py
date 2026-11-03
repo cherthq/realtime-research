@@ -100,6 +100,65 @@ def test_queued_speech_coalesces_without_waiting_or_losing_text_at_the_bound():
     asyncio.run(run())
 
 
+def test_clause_wait_joins_arriving_sentence_without_delaying_complete_replies():
+    async def run():
+        queue = asyncio.Queue()
+        queue.put_nowait("Yes, that works,")
+        stream = speech_text(queue, max_wait_seconds=0.2)
+        next_piece = asyncio.create_task(anext(stream))
+        await asyncio.sleep(0.01)
+        assert not next_piece.done()
+        queue.put_nowait("even on the smaller GPU.")
+        assert await asyncio.wait_for(next_piece, 0.1) == (
+            "Yes, that works, even on the smaller GPU."
+        )
+        # A complete sentence has no added wait, even if more text may follow.
+        queue.put_nowait("That works!")
+        assert await asyncio.wait_for(anext(stream), 0.05) == "That works!"
+        # End-of-response flushes a fragment immediately.
+        queue.put_nowait("Oh, okay")
+        queue.put_nowait(None)
+        assert await asyncio.wait_for(anext(stream), 0.05) == "Oh, okay"
+        assert [part async for part in stream] == []
+
+    asyncio.run(run())
+
+
+def test_clause_wait_has_one_deadline_and_preserves_late_text_after_timeout():
+    async def run():
+        queue = asyncio.Queue()
+        queue.put_nowait("The first clause,")
+        # Leave room for Windows' coarse event-loop timer resolution.
+        stream = speech_text(queue, max_wait_seconds=0.6)
+        task = asyncio.create_task(anext(stream))
+        await asyncio.sleep(0.2)
+        queue.put_nowait("and another,")
+        # Incoming fragments must not restart the deadline.
+        assert await asyncio.wait_for(task, 0.5) == "The first clause, and another,"
+        queue.put_nowait("still keeps the final words.")
+        queue.put_nowait(None)
+        assert [part async for part in stream] == ["still keeps the final words."]
+
+    asyncio.run(run())
+
+
+def test_cancelling_a_waiting_clause_leaves_no_queue_consumer():
+    async def run():
+        queue = asyncio.Queue()
+        queue.put_nowait("This unfinished clause,")
+        stream = speech_text(queue, max_wait_seconds=0.2)
+        task = asyncio.create_task(anext(stream))
+        await asyncio.sleep(0.01)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        queue.put_nowait("next turn")
+        await asyncio.sleep(0)
+        assert queue.get_nowait() == "next turn"
+        await stream.aclose()
+
+    asyncio.run(run())
+
+
 def test_text_done_does_not_finish_pcm_before_local_tts_finishes():
     async def run():
         sink = Sink()
