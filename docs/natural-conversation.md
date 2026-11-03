@@ -143,6 +143,17 @@ Raw runs and the local side-by-side transcript page are kept under ignored
 `.cache/conversation-prompt-20261103/`. Only the selected prompt and this summary
 are part of the public repository.
 
+An actual audio-input greeting exposed a regression the text-only check missed:
+the avatar volunteered “I don’t do feelings.” The final prompt explicitly treats
+casual greetings as greetings and reserves AI-identity explanations for relevant
+questions. A separate probe replayed the same recorded greeting three times per
+prompt, followed by a direct identity question: all three revised greetings
+avoided unsolicited disclaimers, and all three identity replies identified the
+speaker as AI. These 12 additional responses are a narrow regression check, not
+proof of natural conversation; wording such as “What's on your mind?” still
+repeats. The recordings and results remain in ignored
+`.cache/conversation-greeting-20261103/`.
+
 ## Why these changes
 
 - The [Realtime prompting guide](https://developers.openai.com/cookbook/examples/realtime_prompting_guide)
@@ -169,8 +180,11 @@ exercise actual synthesis, but human listening remains the acceptance check for
 naturalness. Do not treat a successful request or lower latency as a quality
 score.
 
-The backend suite passed **247 tests**, with six optional tests skipped. After
-deployment, a synthetic-microphone call through the public HTTPS app completed
-both user and assistant captions, received audio packets and displayed 288 video
-frames at 512×384, with no browser errors. This confirms the call path works; it
-does not verify perceived naturalness, physical speaker output or perfect lip-sync.
+The backend suite passed **247 tests**, with six optional tests skipped. The final
+greeting adjustment then passed 58 focused conversation, voice-stream and search
+tests. After deployment, a synthetic-microphone call through the public HTTPS app
+completed both captions, received audio packets and displayed 265 video frames
+at 512×384, with no browser errors. Its reply was “Hey. Doing fine. What's on your
+mind?” This confirms the call path works and that this greeting avoided the
+earlier disclaimer; it does not verify perceived naturalness, physical speaker
+output or perfect lip-sync.
