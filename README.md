@@ -1,101 +1,72 @@
 <p align="center">
-  <a href="https://www.trychert.com/"><img src="docs/assets/chert-logo.png" alt="Chert" width="88" height="88"></a>
+  <a href="https://www.trychert.com/"><img src="docs/assets/chert-logo.png" alt="Chert" width="80" height="80"></a>
 </p>
 
 <h1 align="center">Chert Realtime Avatars</h1>
 
-<p align="center"><strong>A self-hosted platform for real-time conversations with AI avatars.</strong></p>
+<p align="center">Have a video conversation with an AI avatar in your browser or on FaceTime.<br>AvatarForever animates a reference portrait on a single GPU while you talk.</p>
 
 <p align="center">
-  <a href="https://dunlichan.com/projects/chert/"><img src="https://img.shields.io/badge/Demo-Try%20it-28724f" alt="Try the live demo"></a>
-  <a href="https://www.trychert.com/"><img src="https://img.shields.io/badge/Chert-Website-222222" alt="Chert website"></a>
-  <a href="realtime/QUALIFICATION.md"><img src="https://img.shields.io/badge/status-experimental-e69838" alt="Experimental"></a>
+  <a href="https://dunlichan.com/projects/chert/"><strong>Try the browser demo ↗</strong></a> ·
+  <a href="facetime/README.md">Connect FaceTime</a> ·
+  <a href="#quickstart">Self-host</a> ·
+  <a href="docs/avatar-experiment-log.md">Experiment log</a>
 </p>
-
-A browser video call with a generated avatar: speak, interrupt, share your camera,
-and read live captions. AvatarForever runs on your GPU; OpenAI handles conversation
-and vision, ElevenLabs generates speech, and LiveKit Cloud carries audio/video.
-
-Ten reference portraits and stock-voice assignments are included. Model weights,
-private character assets and API keys stay on your server.
 
 ## Demo
 
-Watch a conversation with live captions, interruption and an animated avatar.
-
 https://github.com/user-attachments/assets/953b779c-8f33-426b-8076-3ae8d0138d2b
 
-**[Try the live demo →](https://dunlichan.com/projects/chert/)**
+Choose one of ten portraits, turn on your microphone and start talking. Try interrupting mid-answer, turning on live captions, or showing the avatar something through your webcam.
 
-The public demo supports **one caller at a time**. If it is busy, join the queue;
-your position updates automatically. You have 30 seconds to start when your turn arrives.
+The public browser demo serves **one caller at a time**. If someone is on a call, join the waiting queue. Your position updates automatically, and you have **30 seconds** to start when your turn arrives.
 
-To run this avatar on your own FaceTime line, follow the [Chert connector setup](facetime/README.md). The [experiment log](docs/avatar-experiment-log.md) covers voice quality, visual stability and measured call latency.
+## How a call works
+
+The voice backend produces the reply audio. AvatarForever uses that same audio to generate the avatar’s mouth and facial motion. LiveKit carries the caller’s microphone in and the synchronized voice and video back out.
+
+| Call path | What runs | Setup |
+| --- | --- | --- |
+| **Browser** | The documented setup uses OpenAI for conversation and camera questions, and ElevenLabs for the portrait’s stock voice. | [Browser setup](docs/recreate-demo.md) |
+| **GPT-Live browser preview** | GPT-Live 1.1 listens and speaks directly in the Marin voice. Chert can retrieve project docs, search the web, or inspect a shared camera frame when enabled. | [Voice preview](gpt_live_trial/README.md) |
+| **FaceTime** | An inbound call to your Chert line connects to the GPT-Live preview with the **Brick Room** avatar. The connector reserves the GPU when the caller joins. Caller video depends on the line’s camera capability. | [FaceTime connector](facetime/README.md) |
 
 ## Quickstart
 
-### Requirements
+The tested host is an **Ubuntu x86_64 machine with one H100 80 GB** and at least **150 GB of free disk space**. Install Git, Python 3.11 with venv, FFmpeg, and Node.js 22.12+ for the web client. Use Node.js 24 for the FaceTime connector.
 
-| Component | Required |
-| --- | --- |
-| GPU host | Ubuntu x86_64, H100 80 GB, at least 150 GB free storage |
-| Software | Git, Python 3.11 with venv, Node.js 22.12+, FFmpeg |
-| Services | LiveKit Cloud, OpenAI and ElevenLabs credentials |
-| Model access | Hugging Face access to the [Gemma text encoder](https://huggingface.co/google/gemma-3-12b-it-qat-q4_0-unquantized) |
+1. **Install the app and build the web client.** On the GPU host, run the following commands.
 
-### Install
+   ```bash
+   git clone https://github.com/cherthq/realtime-research.git
+   cd realtime-research
+   python3.11 -m venv .venv-realtime
+   .venv-realtime/bin/python -m pip install -r realtime/requirements.txt -c realtime/constraints-linux-py311.txt
+   (cd realtime/web && npm ci && npm run build)
+   ```
 
-Run on your GPU host:
+2. **Prepare the renderer.** Install AvatarForever in its own environment and download the pinned weights. You’ll need Hugging Face access to the Gemma text encoder. [GPU setup and weight download](docs/recreate-demo.md#2-install-avatarforever-and-download-weights)
+3. **Configure the backend.** Copy `realtime/.env.example` to `realtime/.env`. Set the LiveKit Cloud and OpenAI credentials there. The stock-voice browser setup also needs an ElevenLabs key. The GPT-Live path needs OpenAI project access to `gpt-live-1.1`. [Private configuration](docs/recreate-demo.md#3-configure-privately)
+4. **Start the host and prewarm the portrait.** Open the browser app through the SSH tunnel. For an iPhone call, start the GPT-Live preview and connect the named agent to a FaceTime line in your Chert project. [Host and warm-up commands](docs/recreate-demo.md#4-start-and-prewarm) · [FaceTime setup](facetime/README.md)
 
-```bash
-git clone https://github.com/cherthq/realtime-research.git
-cd realtime-research
-python3.11 -m venv .venv-realtime
-.venv-realtime/bin/python -m pip install -r realtime/requirements.txt -c realtime/constraints-linux-py311.txt
-cd realtime/web
-npm ci
-npm run build
-cd ../..
-```
-
-### Configure and run
-
-1. **Prepare the model.** Run the [GPU setup script](infra/setup-avatarforever.sh)
-   and download the pinned AvatarForever and Gemma weights.
-2. **Add credentials.** Copy [realtime/.env.example](realtime/.env.example) to
-   `realtime/.env` and configure the providers and GPU worker. Keep this file private.
-3. **Start the application.** Prepare the host, start the server and prewarm the
-   model, then open the web app through an SSH tunnel or HTTPS.
-
-The setup guide includes the commands and configuration for each step:
-
-**[Complete setup →](docs/recreate-demo.md)** · **[Deploy on a public domain →](docs/public-demo.md)**
-
-Provider keys stay on the server. The browser receives a short-lived room token
-and a key scoped to its own call.
-
-## Repository guide
-
-| Directory | Contents |
-| --- | --- |
-| [realtime/](realtime/README.md) | Web app, voice agent, streaming worker and tests |
-| [realtime/demo-avatars/](realtime/demo-avatars/README.md) | Ten reference portraits and stock voice assignments |
-| [data_fetching/](data_fetching/README.md) | 4:3 talking-video preparation and review pipeline |
-| [configs/](configs/models.json) · [scripts/](scripts/workspace.py) | Pinned model sources and baseline tools |
-| [infra/](infra/lambda.md) | GPU setup and deployment helpers |
-
-For model comparisons, follow the [baseline workflow](docs/running-baselines.md)
-and [zero-shot evaluation protocol](docs/zero-shot-baseline.md). Dataset preparation,
-evaluation and training are separate from running a call.
+For public hosting, the HTTPS gateway keeps provider credentials on the server and gives each browser a short-lived room token and a key scoped to its call. [HTTPS deployment guide](docs/public-demo.md)
 
 ## Known limitations
 
-- **Capacity:** the current deployment serves one call per GPU, with a ten-minute call limit.
-- **Visual quality:** long calls can drift; idle mouth motion and lip-sync remain imperfect.
-- **Playback:** output uses 4:3 framing with a 24 FPS publication cap. Actual performance
-  depends on the GPU and configuration; lower resolution does not resolve visual drift.
+The current deployment supports **one active call per GPU**. The public browser demo has a **ten-minute call limit**. A FaceTime call and a browser call on the same renderer share that slot.
 
-See [validation results and tested scope](realtime/QUALIFICATION.md) before deploying.
+Video uses 4:3 framing with a **24 FPS publication cap**. Frames can repeat under load. On longer calls, color or identity can drift, and the mouth can move during silence or miss the first sounds of a reply.
 
-Upstream models and reference images retain their own terms. Bundled voices are
-stock voice selections, not clones of the people in the portraits.
+Two inbound FaceTime calls reached the agent and Chert reported outbound audio and video on both. Handset latency, perceived lip-sync, and incoming camera quality still need a phone-side check. [Tested scope](realtime/QUALIFICATION.md) · [Experiment results](docs/avatar-experiment-log.md)
+
+## Explore the repository
+
+| For | Start here |
+| --- | --- |
+| Call handling, web client and GPU worker | [Realtime app](realtime/README.md) |
+| Portraits and stock voice assignments | [Avatar gallery](realtime/demo-avatars/README.md) |
+| Preparing and reviewing 4:3 talking videos | [Data pipeline](data_fetching/README.md) |
+| Reproducing model comparisons | [Pinned model sources](configs/models.json) · [Baseline workflow](docs/running-baselines.md) · [Zero-shot protocol](docs/zero-shot-baseline.md) |
+| Provisioning the GPU host | [Infrastructure guide](infra/lambda.md) |
+
+Upstream models and reference portraits retain their own terms. The bundled gallery pairs each portrait with a stock voice selected for the demo.
