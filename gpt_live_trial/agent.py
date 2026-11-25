@@ -13,13 +13,14 @@ from websockets.asyncio.client import connect
 
 from realtime.audio import PCMResampler
 from realtime.contracts import FRAME_SAMPLES
+from .profile import CHERT_PROFILE
 
 MODEL = "gpt-live-1.1"
 VOICE = "marin"
 RATE = 24000
 FRAME = RATE // 50
 INSTRUCTIONS = (
-    "You are Chert, a conversational AI on a casual English voice call. Let the caller speak first. "
+    CHERT_PROFILE + "\n\nThis is a casual English voice call. Let the caller speak first. "
     "Listen while speaking. A brief mm-hm usually means keep going. Yield when corrected. "
     "Respond directly in a calm conversational voice. Give enough detail for the question. "
     "For simple questions one sentence often works. Use earlier details from this call. "

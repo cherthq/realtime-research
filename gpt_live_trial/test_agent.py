@@ -1,14 +1,18 @@
 """Regression coverage for the continuous Live audio and paired-video boundary."""
 
 import asyncio
+import json
+from unittest.mock import AsyncMock, patch
 
 
 import numpy as np
 from realtime.contracts import ResponseBuffer
+from realtime.config import Settings
 from realtime.continuous import ContinuousTimeline
 from realtime.playback import frame_id
 from realtime.transcripts import TranscriptLedger
 from gpt_live_trial.agent import LiveAgent
+from gpt_live_trial.profile import CHERT_PROFILE
 
 
 class Sink:
@@ -36,6 +40,49 @@ class Sink:
 
 def block(loud, ms=100):
     return np.full(24 * ms, 1000 if loud else 0, dtype="<i2").tobytes()
+
+
+def test_each_new_voice_session_starts_with_the_chert_profile():
+    class Socket:
+        def __init__(self):
+            self.sent = []
+            self.events = asyncio.Queue()
+
+        async def send(self, message):
+            event = json.loads(message)
+            self.sent.append(event)
+            if event["type"] == "session.start":
+                await self.events.put(json.dumps({"type": "session.started", "session": event["session"]}))
+            elif event["type"] == "session.close":
+                await self.events.put('{"type":"session.closed"}')
+
+        async def recv(self):
+            return await self.events.get()
+
+        def __aiter__(self):
+            return self
+
+        __anext__ = recv
+
+        async def close(self):
+            pass
+
+    async def scenario():
+        settings = Settings(_env_file=None, openai_api_key="test-only")
+        for _ in range(2):
+            socket = Socket()
+            agent = LiveAgent(settings, Sink())
+            with patch("gpt_live_trial.agent.connect", new=AsyncMock(return_value=socket)):
+                await agent.start()
+                try:
+                    first = socket.sent[0]
+                    assert first["type"] == "session.start"
+                    assert first["session"]["instructions"].startswith(CHERT_PROFILE)
+                    assert first["session"]["model"] == "gpt-live-1.1"
+                finally:
+                    await agent.close()
+
+    asyncio.run(scenario())
 
 
 def test_silence_preroll_phrase_pause_and_flush():

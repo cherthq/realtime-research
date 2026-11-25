@@ -91,6 +91,7 @@ def make_pair(baseline, trial_port):
     @routes.get("/api/preview/provider")
     async def provider():
         return {
+            "assistant_name": "Chert",
             "model": MODEL,
             "voice": VOICE,
             "avatar_pool": "shared",

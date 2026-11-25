@@ -4,6 +4,8 @@ The control and trial are two private websites backed by one avatar renderer. Op
 
 The trial streams microphone audio to GPT-Live over a server-side WebSocket. The returned 24 kHz audio drives both AvatarForever and the caller's audio track. The browser hears the result through LiveKit. A response uses the Marin voice and can hear the caller during playback. The trial exercises conversation and in-call recall. Camera analysis, web lookup and durable memory are outside this comparison.
 
+Every new GPT-Live session receives the same [Chert profile](profile.py), regardless of the selected portrait. The profile covers the avatar's name, what the company builds, and which model powers this call. Its product facts come from [Chert's website](https://chert.dev/).
+
 ## Run on a prepared Chert host
 
 Follow the [demo setup](../docs/recreate-demo.md) to install the dependencies, build the client and configure the renderer and LiveKit. Supply an OpenAI project key with access to `gpt-live-1.1` in the backend environment. The existing baseline uses its configured speech credentials.

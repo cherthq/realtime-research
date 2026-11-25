@@ -31,9 +31,9 @@ def test_main_and_trial_share_admission_and_only_trial_lists_marin():
             assert health["conversation_model"] == "gpt-live-1.1"
             result = await client.get(trial + "/api/voices")
             assert [row["id"] for row in result.json()] == ["marin"]
-            assert (await client.get(trial + "/api/preview/provider")).json()[
-                "model"
-            ] == "gpt-live-1.1"
+            provider = (await client.get(trial + "/api/preview/provider")).json()
+            assert provider["assistant_name"] == "Chert"
+            assert provider["model"] == "gpt-live-1.1"
             assert (
                 await client.get(control + "/api/preview/provider")
             ).status_code == 404
