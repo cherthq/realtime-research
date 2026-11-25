@@ -4,7 +4,7 @@
 
 <h1 align="center">Chert Realtime Avatars</h1>
 
-<p align="center">Have a video conversation with an AI avatar in your browser or on FaceTime.<br>AvatarForever animates a reference portrait on a single GPU while you talk.</p>
+<p align="center"><strong>Realtime video diffusion avatar model infra demo</strong></p>
 
 <p align="center">
   <a href="https://dunlichan.com/projects/chert/"><strong>Try the browser demo ↗</strong></a> ·
