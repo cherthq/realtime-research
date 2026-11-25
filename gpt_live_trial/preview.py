@@ -51,11 +51,7 @@ class TrialVoices(VoiceService):
 
 def make_pair(baseline, trial_port):
     manager = baseline.state.manager
-    trial_config = manager.config.model_copy(
-        update=dict(
-            tts_provider="openai", camera_vision=False, web_search_enabled=False
-        )
-    )
+    trial_config = manager.config.model_copy(update=dict(tts_provider="openai"))
     # Reuse the existing gallery, admission lock, session registry and GPU pool.
     # Only patch constructors while building this isolated process's second app.
     with (
@@ -84,8 +80,9 @@ def make_pair(baseline, trial_port):
             "voice_configured": configured,
             "tts_configured": configured,
             "tts_provider": MODEL,
-            "camera_vision": False,
-            "web_search_enabled": False,
+            "camera_vision": trial_config.camera_vision,
+            "web_search_enabled": trial_config.web_search_enabled,
+            "document_retrieval": True,
         }
 
     @routes.get("/api/preview/provider")
@@ -95,8 +92,9 @@ def make_pair(baseline, trial_port):
             "model": MODEL,
             "voice": VOICE,
             "avatar_pool": "shared",
-            "camera": False,
-            "search": False,
+            "camera": trial_config.camera_vision,
+            "search": trial_config.web_search_enabled,
+            "retrieval": "public_chert_docs",
         }
 
     trial.router.routes[:0] = routes.routes

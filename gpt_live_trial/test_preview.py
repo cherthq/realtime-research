@@ -34,6 +34,9 @@ def test_main_and_trial_share_admission_and_only_trial_lists_marin():
             provider = (await client.get(trial + "/api/preview/provider")).json()
             assert provider["assistant_name"] == "Chert"
             assert provider["model"] == "gpt-live-1.1"
+            assert provider["retrieval"] == "public_chert_docs"
+            assert provider["search"] == app.state.manager.config.web_search_enabled
+            assert provider["camera"] == app.state.manager.config.camera_vision
             assert (
                 await client.get(control + "/api/preview/provider")
             ).status_code == 404

@@ -2,7 +2,11 @@
 
 The control and trial are two private websites backed by one avatar renderer. Open the control on port 18821 or the GPT-Live trial on port 18837. End the current call before switching. Both sites share the same admission lock, portrait catalog, session manager and GPU pool.
 
-The trial streams microphone audio to GPT-Live over a server-side WebSocket. The returned 24 kHz audio drives both AvatarForever and the caller's audio track. The browser hears the result through LiveKit. A response uses the Marin voice and can hear the caller during playback. The trial exercises conversation and in-call recall. Camera analysis, web lookup and durable memory are outside this comparison.
+The trial streams microphone audio to GPT-Live over a server-side WebSocket. GPT-Live produces the Marin voice. Its audio enters the paired audio/video buffer, where AvatarForever renders the mouth motion and LiveKit publishes the matching audio to the browser. The caller can interrupt during playback.
+
+GPT-Live can delegate a question to Chert while the audio stream continues. Chert can inspect a fresh frame from a shared webcam, look up a public fact with citations, or search the bundled public documentation about the demo queue, call limits and portrait gallery. The backend returns evidence to the same voice session. Source links appear with the spoken caption. The conversation history used for delegation lasts for the current call.
+
+Enable webcam and internet lookups with `CAMERA_VISION=true` and `WEB_SEARCH_ENABLED=true` in the backend environment. The caller must share a camera for visual questions. Document retrieval uses the repository files locally and requires no vector database. The ElevenLabs voice settings apply to the control.
 
 Every new GPT-Live session receives the same [Chert profile](profile.py), regardless of the selected portrait. The profile covers the avatar's name, what the company builds, and which model powers this call. Its product facts come from [Chert's website](https://chert.dev/).
 
