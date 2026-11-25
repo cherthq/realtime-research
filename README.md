@@ -30,6 +30,8 @@ https://github.com/user-attachments/assets/953b779c-8f33-426b-8076-3ae8d0138d2b
 The public demo supports **one caller at a time**. If it is busy, join the queue;
 your position updates automatically. You have 30 seconds to start when your turn arrives.
 
+To run this avatar on your own FaceTime line, follow the [Chert connector setup](facetime/README.md). The [experiment log](docs/avatar-experiment-log.md) covers voice quality, visual stability and measured call latency.
+
 ## Quickstart
 
 ### Requirements

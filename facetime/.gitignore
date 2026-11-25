@@ -1,0 +1,4 @@
+.env*
+.chert/
+node_modules/
+*.log

@@ -1,4 +1,6 @@
 import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 from fastapi import APIRouter
@@ -47,6 +49,48 @@ def test_main_and_trial_share_admission_and_only_trial_lists_marin():
                     json={"mode": "voice_diagnostic", "avatar_id": "call07"},
                 )
                 assert r.status_code == 409
+        await app.state.voices.close()
+
+    asyncio.run(scenario())
+
+
+def test_facetime_start_recovery_uses_one_live_session(monkeypatch):
+    async def scenario():
+        app = create_app(Settings(_env_file=None))
+        manager = app.state.manager
+        session = SimpleNamespace(
+            id="fixture", key="fixture-secret", ended=False,
+            worker=SimpleNamespace(room_name="test-room"),
+            public=lambda: {"id": "fixture"},
+        )
+
+        async def allocate(*args):
+            manager.sessions[session.id] = session
+            return session
+
+        allocate_once = AsyncMock(side_effect=allocate)
+        monkeypatch.setattr(manager, "create", allocate_once)
+        monkeypatch.setattr("realtime.app.room_token", lambda *args: "fixture-token")
+        transport = httpx.ASGITransport(app=make_pair(app, 18837))
+        headers = {"x-start-key": "a" * 64}
+        payload = {"avatar_id": "call07"}
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://127.0.0.1:18837"
+        ) as client:
+            async def post(path, data=payload):
+                return await client.post(path, headers=headers, json=data)
+
+            assert (await post("/api/sessions/recover")).status_code == 410
+            first, repeated = await asyncio.gather(
+                post("/api/sessions"), post("/api/sessions")
+            )
+            recovered = await post("/api/sessions/recover")
+            assert first.status_code == repeated.status_code == recovered.status_code == 201
+            assert recovered.json() == first.json() == repeated.json()
+            assert (await post("/api/sessions/recover", {"avatar_id": "other"})).status_code == 409
+            session.ended = True
+            assert (await post("/api/sessions/recover")).status_code == 410
+            allocate_once.assert_awaited_once()
         await app.state.voices.close()
 
     asyncio.run(scenario())

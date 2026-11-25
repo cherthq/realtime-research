@@ -34,19 +34,6 @@ Use the same portrait, microphone and prompts on both sites. Try an ordinary que
 
 Run the local regression checks with `python -m pytest -q gpt_live_trial`. They cover microphone transcript grouping, silence at the speech boundary, brief pauses, explicit interruptions, and single-call admission across both sites.
 
-### Private browser comparison, November 25, 2026
-
-One Chromium call per voice stack used the same synthetic microphone recording, warm H100, Brick Room portrait, two-step renderer, 512×384 frames and 24 FPS cap. Times run from the end of caller speech to the first sustained audio detected in the browser's playback path.
-
-| Caller turn | GPT-Live 1.1 + Marin | Original Sama + ElevenLabs |
-| --- | ---: | ---: |
-| Mix blue and yellow paint | 4.46 s | 3.92 s |
-| Pepper's collar is teal | 5.94 s | 4.01 s |
-| Recall the collar color | 4.61 s | 3.99 s |
-| Median, three turns | **4.61 s** | **3.99 s** |
-
-Both answered the paint question correctly. GPT-Live recalled “Teal.” Sama asked the caller to enable the webcam. The Sama recall time therefore measures the start of an incorrect answer. The browser received approximately 23.7 and 23.8 decoded frames per second respectively. Neither call had a decoded-frame gap above 250 ms. An earlier run of the same prompts measured 4.95 s and 4.40 s and produced the same recall outcomes.
-
-In a separate overlap test, the caller interrupted an explanation of rain to ask about fog and later said “mm-hm.” GPT-Live switched to fog and continued through the acknowledgment. Sama also switched to fog, but treated “mm-hm” as a second interruption. From the start of the correction to the browser muting the previous answer, GPT-Live took 1.70 s and Sama took 0.66 s. Both missed the project’s 350 ms target. The early trial build failed when a pause ended between video frames. The corrected build kept publishing through the end of the replay. These short synthetic calls do not establish a general quality ranking.
+The [experiment log](../docs/avatar-experiment-log.md) records the browser replay results, timing measurements and open issues. To call this preview from an iPhone, follow the [FaceTime setup guide](../facetime/README.md).
 
 OpenAI documents the session and continuous audio event format in its [GPT-Live guide](https://developers.openai.com/api/docs/guides/live) and [WebSocket audio guide](https://developers.openai.com/api/docs/guides/voice-websockets).

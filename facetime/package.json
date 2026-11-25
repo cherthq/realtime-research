@@ -1,0 +1,13 @@
+{
+  "name": "chert-avatar-facetime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "24.x" },
+  "scripts": { "start": "node agent.mjs start", "test": "node --test test.mjs" },
+  "dependencies": {
+    "@livekit/agents": "1.8.0",
+    "@livekit/rtc-node": "0.13.35",
+    "@trychert/facetime": "0.1.0-beta.22"
+  }
+}

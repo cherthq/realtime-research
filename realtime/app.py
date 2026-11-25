@@ -25,6 +25,7 @@ from .access import COOKIE, TTL, DemoAccess
 from .config import ROOT, Settings, settings
 from .contracts import HEIGHT, WIDTH, FPS, PUBLISH_FPS
 from .gpu_pool import GPUWorkerPool
+from .start_receipts import StartReceipts
 from .worker import DemoWorker, delete_room, room_token
 from .voices import VoicePreparationError, VoiceService
 from .voices import digest, save_json
@@ -243,6 +244,7 @@ def create_app(config: Settings = settings) -> FastAPI:
     catalog = Catalog(config)
     voices = VoiceService(config, catalog)
     manager = SessionManager(config, catalog)
+    start_receipts = StartReceipts()
     access = DemoAccess(config.demo_access_token.get_secret_value())
 
     @asynccontextmanager
@@ -251,6 +253,7 @@ def create_app(config: Settings = settings) -> FastAPI:
         yield
         cleanup.cancel()
         await asyncio.gather(cleanup, return_exceptions=True)
+        await start_receipts.close()
         for session in list(manager.sessions.values()):
             if not session.ended or (
                 session.close_task and not session.close_task.done()
@@ -261,6 +264,7 @@ def create_app(config: Settings = settings) -> FastAPI:
         await manager.gpu_pool.close()
 
     app = FastAPI(title="Chert realtime demo", lifespan=lifespan)
+    app.state.start_receipts = start_receipts
     app.state.manager = manager
     app.state.voices = voices
     app.add_middleware(
@@ -464,7 +468,6 @@ def create_app(config: Settings = settings) -> FastAPI:
     async def scenarios():
         return catalog.cases()
 
-    @app.post("/api/sessions", status_code=201)
     async def start(body: StartRequest):
         if body.avatar_id is None:
             body.avatar_id = next(iter(catalog.portraits))
@@ -527,6 +530,27 @@ def create_app(config: Settings = settings) -> FastAPI:
                 "token": room_token(config, session.worker.room_name, "browser"),
             },
         }
+
+    async def start_result(body: StartRequest, key: str, recover: bool):
+        result = await start_receipts.run(
+            key, body.model_dump(), None if recover else lambda: start(body)
+        )
+        session = manager.sessions.get(result["id"])
+        if session is None or session.ended:
+            raise HTTPException(410, "That call has ended. Start a new call.")
+        return result
+
+    @app.post("/api/sessions", status_code=201)
+    async def start_request(body: StartRequest, x_start_key: str = Header(default="")):
+        # Older local clients retain their existing behavior. The gateway and
+        # recovery-aware browser always provide a random, per-call key.
+        if not x_start_key:
+            return await start(body)
+        return await start_result(body, x_start_key, False)
+
+    @app.post("/api/sessions/recover", status_code=201)
+    async def recover_start(body: StartRequest, x_start_key: str = Header(default="")):
+        return await start_result(body, x_start_key, True)
 
     async def own(sid: str, x_session_key: str = Header(default="")):
         return manager.get(sid, x_session_key)
