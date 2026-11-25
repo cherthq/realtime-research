@@ -7,10 +7,12 @@
 <p align="center"><strong>Realtime video diffusion avatar model infra demo</strong></p>
 
 <p align="center">
-  <a href="https://dunlichan.com/projects/chert/"><strong>Try the browser demo ↗</strong></a> ·
-  <a href="facetime/README.md">Connect FaceTime</a> ·
-  <a href="#quickstart">Self-host</a> ·
-  <a href="docs/avatar-experiment-log.md">Experiment log</a>
+  <a href="https://dunlichan.com/projects/chert/"><img src="https://img.shields.io/badge/demo-try%20it-28724f?style=flat-square" alt="Try the browser demo"></a>
+  <a href="facetime/README.md"><img src="https://img.shields.io/badge/FaceTime-Chert%20SDK-3166a0?style=flat-square" alt="FaceTime setup with the Chert SDK"></a>
+  <a href="https://github.com/cherthq/realtime-research/actions/workflows/realtime.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/cherthq/realtime-research/realtime.yml?branch=main&amp;label=CI&amp;style=flat-square" alt="Realtime CI status on main"></a>
+  <a href="#quickstart"><img src="https://img.shields.io/badge/python-3.11-3776ab?style=flat-square" alt="Python 3.11 quickstart"></a>
+  <a href="docs/recreate-demo.md"><img src="https://img.shields.io/badge/GPU-1%C3%97%20H100-567b20?style=flat-square" alt="GPU setup on one H100"></a>
+  <a href="docs/avatar-experiment-log.md"><img src="https://img.shields.io/badge/FPS%20cap-24-28724f?style=flat-square" alt="24 FPS publication cap and experiment results"></a>
 </p>
 
 ## Demo
