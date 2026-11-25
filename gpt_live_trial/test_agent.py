@@ -5,6 +5,8 @@ import asyncio
 
 import numpy as np
 from realtime.contracts import ResponseBuffer
+from realtime.continuous import ContinuousTimeline
+from realtime.playback import frame_id
 from realtime.transcripts import TranscriptLedger
 from gpt_live_trial.agent import LiveAgent
 
@@ -80,5 +82,27 @@ def test_real_interrupt_and_backchannel_have_different_effects():
             if row["speaker"] == "user"
         ]
         assert texts == ["mm-hm", "Wait, the red one."]
+
+    asyncio.run(scenario())
+
+
+def test_live_phrase_can_resume_while_its_final_video_frame_is_still_playing():
+    class PlayingSink(Sink):
+        @property
+        def response_active(self):
+            return self.begins > 0
+
+    async def scenario():
+        sink = PlayingSink()
+        agent = LiveAgent(None, sink)
+        timeline = ContinuousTimeline()
+        await agent._audio(block(True, 100))
+        await agent._audio(block(False, 420))
+        timeline.take(sink.buffer)
+        await agent._audio(block(True, 240))
+        await agent._audio(block(False, 440))
+        _, position, valid = timeline.take(sink.buffer)
+        assert valid > 0 and sink.begins == 1
+        frame_id(sink.buffer.epoch, position, True)
 
     asyncio.run(scenario())

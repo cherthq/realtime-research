@@ -12,6 +12,7 @@ import numpy as np
 from websockets.asyncio.client import connect
 
 from realtime.audio import PCMResampler
+from realtime.contracts import FRAME_SAMPLES
 
 MODEL = "gpt-live-1.1"
 VOICE = "marin"
@@ -250,6 +251,11 @@ class LiveAgent:
                 self._append(samples)
             self.quiet = 0 if loud else self.quiet + 1
             if self.quiet >= 20:
+                # A pause can finish the buffer and resume the same response
+                # during playout. Its next frame ID needs a whole-frame offset.
+                padding = (-self.synthesized_samples) % FRAME_SAMPLES
+                if padding:
+                    self._append(np.zeros(padding, dtype=np.int16))
                 self.active = False
                 self.sink.buffer.finish(self.segment, self.epoch)
                 self.quiet = 0

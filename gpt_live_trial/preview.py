@@ -70,13 +70,19 @@ def make_pair(baseline, trial_port):
         trial_web.app = regular_web.app
 
     routes = APIRouter()
-    original_health = next(r.endpoint for r in trial.routes if r.path == "/api/health")
+    original_health = next(
+        r.endpoint for r in baseline.routes if r.path == "/api/health"
+    )
 
     @routes.get("/api/health")
     async def health():
+        configured = bool(trial_config.openai_api_key.get_secret_value())
         return {
             **await original_health(),
             "conversation_provider": MODEL,
+            "conversation_model": MODEL,
+            "voice_configured": configured,
+            "tts_configured": configured,
             "tts_provider": MODEL,
             "camera_vision": False,
             "web_search_enabled": False,
