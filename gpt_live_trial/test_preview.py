@@ -94,3 +94,35 @@ def test_facetime_start_recovery_uses_one_live_session(monkeypatch):
         await app.state.voices.close()
 
     asyncio.run(scenario())
+
+
+def test_greeting_requires_session_key_and_is_trial_only():
+    from gpt_live_trial.agent import LiveAgent
+
+    async def scenario():
+        app = create_app(Settings(_env_file=None))
+        voice = LiveAgent(None, None)
+        voice.ws = object()
+        voice.send = AsyncMock()
+        session = SimpleNamespace(
+            id="fixture", key="fixture-secret", ended=False, lock=asyncio.Lock(),
+            worker=SimpleNamespace(voice=voice),
+        )
+        app.state.manager.sessions[session.id] = session
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=make_pair(app, 18837)),
+            base_url="http://127.0.0.1:18837",
+        ) as client:
+            path = "/api/sessions/fixture/greet"
+            for headers in ({}, {"x-session-key": "wrong"}):
+                assert (await client.post(path, headers=headers)).status_code == 404
+            headers = {"x-session-key": session.key}
+            assert (await client.post("http://127.0.0.1:18821" + path, headers=headers)).status_code == 404
+            for _ in range(2):
+                assert (await client.post(path, headers=headers)).status_code == 200
+            voice.send.assert_awaited_once()
+            session.ended = True
+            assert (await client.post(path, headers=headers)).status_code == 409
+        await app.state.voices.close()
+
+    asyncio.run(scenario())

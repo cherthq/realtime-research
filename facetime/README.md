@@ -4,6 +4,8 @@ Run the named agent and Chert connector on the same Linux host as the working GP
 
 The agent subscribes to the caller's audio and, when the line provides it, camera track. It republishes them into the private avatar room. It sends the avatar's audio and video back to FaceTime under one participant identity. This extra LiveKit hop lets the browser and FaceTime share the same GPU admission and speech pipeline. A browser session using the GPU can prevent a FaceTime call from starting.
 
+Once room metadata signals `chert_bridge_ready: true`, the agent requests a short greeting through the authenticated preview session. This prevents FaceTime's ten-second silent-audio timeout while keeping standby rooms silent and browser sessions caller-first. Deploy the FaceTime files and `gpt_live_trial` together; an older backend does not have the greeting endpoint. Repeated readiness signals and HTTP retries do not produce additional greetings.
+
 ## Set up
 
 1. Start the [GPT-Live preview](../gpt_live_trial/README.md) on loopback port 18837. Verify that the provider reports GPT-Live and that the avatar worker is ready. Use a publicly reachable LiveKit Cloud URL.
