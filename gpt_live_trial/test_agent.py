@@ -153,3 +153,28 @@ def test_live_phrase_can_resume_while_its_final_video_frame_is_still_playing():
         frame_id(sink.buffer.epoch, position, True)
 
     asyncio.run(scenario())
+
+
+def test_facetime_greeting_is_once_and_does_not_interrupt_existing_speech():
+    async def scenario():
+        for turns in (0, 1):
+            agent = LiveAgent(None, Sink())
+            agent.ws = object()
+            agent.send = AsyncMock()
+            agent.turns = turns
+            await asyncio.gather(agent.greet(), agent.greet())
+            assert agent.send.await_count == (0 if turns else 1)
+            if not turns:
+                args = agent.send.call_args
+                assert args.args == ("session.instructions.append",)
+                assert args.kwargs["delegation_id"] is None
+                assert "<say>Hi, I'm Chert." in args.kwargs["content"]
+            agent.closed = True
+            try:
+                await agent.greet()
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError("Ended sessions must reject greetings")
+
+    asyncio.run(scenario())
