@@ -22,20 +22,6 @@ export async function startSession(origin = 'http://127.0.0.1:18837', fetcher = 
   const session = await response.json();
   return {
     connection: session.connection,
-    async greet() {
-      // The server makes this idempotent, including after a lost HTTP response.
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const res = await fetcher(origin + '/api/sessions/' + encodeURIComponent(session.id) + '/greet', {
-            method: 'POST', headers: { 'x-session-key': session.session_key },
-            signal: AbortSignal.timeout(4000),
-          });
-          if (res.ok) return;
-          if (res.status < 500) break;
-        } catch { /* Retry only this session's one-time greeting. */ }
-      }
-      throw new Error('Avatar greeting unavailable');
-    },
     async close() {
       for (let attempt = 0; attempt < 3; attempt++) {
         try {

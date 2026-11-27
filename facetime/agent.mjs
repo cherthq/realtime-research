@@ -3,18 +3,16 @@ import { AutoSubscribe, cli, defineAgent, ServerOptions } from '@livekit/agents'
 import { Room, RoomEvent } from '@livekit/rtc-node';
 import { agentName, startSession } from './session.mjs';
 import { forwardTracks } from './media.mjs';
-import { greetOnBridgeReady } from './greet.mjs';
 
 export default defineAgent({
   entry: async ctx => {
     const room = ctx.room;
     const inner = new Room();
-    let ended = false, active, setup, stopGreeting;
+    let ended = false, active, setup;
     const forwards = [];
     const stop = () => {
       if (ended) return;
       ended = true;
-      stopGreeting?.();
       ctx.shutdown('FaceTime call ended');
     };
     const isBridge = p => p.identity.startsWith('chert-bridge-');
@@ -30,11 +28,6 @@ export default defineAgent({
         const video = meta.media?.video !== false;
         forwards.push(forwardTracks(inner, room, 'avatar', {video, onError: stop}));
         forwards.push(forwardTracks(room, inner, p.identity, {video, onError: stop}));
-        stopGreeting = greetOnBridgeReady(room, () => {
-          if (ended) return;
-          active.greet().then(() => console.info('FaceTime greeting requested'))
-            .catch(() => { console.error('Could not request the FaceTime greeting'); stop(); });
-        });
       })().catch(() => { console.error('Could not prepare the FaceTime avatar session'); stop(); });
     }
     room.on(RoomEvent.ParticipantConnected, join);
@@ -42,7 +35,6 @@ export default defineAgent({
     inner.on(RoomEvent.Disconnected, stop);
     ctx.addShutdownCallback(async () => {
       ended = true;
-      stopGreeting?.();
       await setup;
       await Promise.allSettled(forwards.map(close => close()));
       await inner.disconnect().catch(() => {});

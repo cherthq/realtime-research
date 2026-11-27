@@ -73,28 +73,6 @@ class LiveAgent:
         self.words = ""
         self.peak_buffer_samples = 0
         self.tools = None
-        self.greeted = False
-
-    async def greet(self):
-        """FaceTime calls this after bridge_ready; browser sessions stay caller-first."""
-        async with self.lock:
-            if self.closed or self.failure or self.ws is None:
-                raise RuntimeError("Voice session unavailable")
-            if self.greeted:
-                return
-            # Do not interrupt a reply if the caller has already started the call.
-            if not self.turns:
-                await self.send(
-                    "session.instructions.append",
-                    delegation_id=None,
-                    content=(
-                        "The FaceTime call is now connected. Greet the caller now. "
-                        "Read the following exactly, without an introduction or explanation: "
-                        "<say>Hi, I'm Chert. How can I help you?</say> "
-                        "Then listen for the caller's reply."
-                    ),
-                )
-            self.greeted = True
 
     async def send(self, kind, **fields):
         await asyncio.wait_for(self.ws.send(json.dumps({"type": kind, **fields})), 3)
