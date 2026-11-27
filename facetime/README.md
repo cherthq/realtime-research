@@ -15,4 +15,14 @@ The agent subscribes to the caller's audio and, when the line provides it, camer
 
 To release the line, stop `chert dev` with Ctrl+C and wait for its release confirmation, then stop the named worker. The browser preview runs independently. `chert logout` revokes the connector login. Keep Chert's private state out of Git.
 
+## Fill the phone screen
+
+Chert Internal Testing uses the per-project `video_framing: "fill"` setting. It was applied in production on November 26, 2026 UTC and verified in `facetime_shared_line_settings`. [The deployment SQL](config/internal-testing-fill.sql) records the exact project and line, skips the write when already configured, and checks the saved result. Run it explicitly through an authorized administrative SQL connection to the database named in the file; it is not an automatic schema migration or an agent startup step.
+
+New calls pick up this setting. Fill preserves the image's proportions and crops the edges to cover the viewport; the native bridge uses a centered 9:16 viewport once FaceTime portrait orientation is confirmed. FaceTime's controls remain part of its own interface. To return to Fit, use `facetime_update_customer_line` with the same project and line and `{"video_framing":"fit"}`. Keep this setting scoped to the project, since the line is shared.
+
+Fill changes composition, not source resolution. The private deployment now renders at 640 × 480, upgraded from 512 × 384. A 9:16 center crop uses about 270 × 480 source pixels before enlargement, compared with 216 × 384 previously. The forwarding agent preserves received frame dimensions; increasing only the final camera canvas cannot recover missing source detail.
+
+The current geometry configuration supports `AVATAR_RESOLUTION=512x384` and `640x480`. [The deployment configuration](config/avatar-resolution.sh) records the enabled value. [The resolution trial](resolution-trial.md) documents startup and rollback steps, measured throughput, the roughly one-second prerecorded-audio delay increase, and the successful live voice/video check. Geometry is process-wide and requires a coordinated backend/renderer restart while idle. Handset picture quality still needs a phone-side comparison; 720p, 1080p, and native portrait rendering require further implementation and validation.
+
 [FaceTime quickstart](https://docs.trychert.com/facetime/quickstart) · [Connect a named agent](https://docs.trychert.com/facetime-cli/quickstart) · [Media capabilities](https://docs.trychert.com/facetime/audio-video)
