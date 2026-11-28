@@ -10,6 +10,33 @@ from realtime.config import Settings
 from gpt_live_trial.preview import make_pair
 
 
+def test_greeting_is_session_authenticated_idempotent_and_trial_only():
+    from gpt_live_trial.test_greeting import agent
+
+    async def scenario():
+        app = create_app(Settings(_env_file=None))
+        voice = agent()
+        session = SimpleNamespace(id="greeting", key="private-session-key", ended=False,
+                                  lock=asyncio.Lock(), worker=SimpleNamespace(voice=voice))
+        app.state.manager.sessions[session.id] = session
+        pair = make_pair(app, 18837)
+        path = "/api/sessions/greeting/greet"
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=pair),
+                                     base_url="http://127.0.0.1:18837") as client:
+            assert (await client.post(path)).status_code == 404
+            assert (await client.post(path, headers={"x-session-key":"wrong"})).status_code == 404
+            assert voice.sink.begins == 0  # browser calls remain caller-first
+            headers = {"x-session-key":session.key}
+            assert (await client.post("http://127.0.0.1:18821" + path, headers=headers)).status_code in {404, 405}
+            for _ in range(2):
+                assert (await client.post(path, headers=headers)).status_code == 200
+            assert voice.sink.begins == 1
+            session.ended = True
+            assert (await client.post(path, headers=headers)).status_code == 409
+        await app.state.voices.close()
+    asyncio.run(scenario())
+
+
 def test_main_and_trial_share_admission_and_only_trial_lists_marin():
     async def scenario():
         app = create_app(Settings(_env_file=None))
