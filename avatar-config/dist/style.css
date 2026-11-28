@@ -72,3 +72,5 @@ h3 { font-size:12px; font-weight:600; color:#526078; margin:0 0 6px; }
 
 .editor-actions { display:flex; gap:10px; align-items:center; }
 .restore { display:block; margin-top:14px; }
+.deployment-content > .text-button + .text-button { margin-left:16px; }
+.section-heading > div { display:flex; gap:12px; align-items:center; }
