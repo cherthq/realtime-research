@@ -26,3 +26,25 @@ test('hosted body limits reject excess data before the runtime request',async()=
   await assert.rejects(readBody(new Request(origin,{method:'POST',headers:{'Content-Length':String(MAX_BODY+1)},body:'x'})));
   await assert.rejects(readBody(new Request(origin,{method:'POST',body:'x'.repeat(MAX_BODY+1)})));
 });
+
+test('hosting build keeps private records out of static output',async()=>{
+  const {mkdtemp,cp,readdir,readFile,rm}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+  const {spawnSync}=await import('node:child_process');const {createHash}=await import('node:crypto');
+  const temporary=await mkdtemp(join(tmpdir(),'avatar-hosting-test-'));
+  try {
+    for(const path of ['build.mjs','dist','lib'])await cp(new URL('../'+path,import.meta.url),join(temporary,path),{recursive:true});
+    const src='data:image/png;base64,aW1hZ2UtZml4dHVyZQ==';
+    const imageHash=createHash('sha256').update(Buffer.from(src.split(',')[1],'base64')).digest('hex');
+    const record={id:'fixture',date:'2026-11-28',detail:'fixture',prompt:'Private fixture prompt',greeting:'',image:{src:null,label:'Fixture',note:'',sha256:imageHash}};
+    const metadata={previewUrl:'http://127.0.0.1:18837/',facetimeNumber:null,recordedAt:'2026-11-28',current:record,previous:[]};
+    const live={current:{...record,image:{...record.image,src}},previous:[]};
+    const source=`globalThis.fetch=async()=>Response.json(${JSON.stringify(live)}); await import('./build.mjs');`;
+    const built=spawnSync(process.execPath,['--input-type=module','-e',source],{cwd:temporary,env:{...process.env,...env,AVATAR_DEPLOYMENT_RECORDS:JSON.stringify(metadata)},encoding:'utf8'});
+    assert.equal(built.status,0,built.stderr);
+    assert.deepEqual((await readdir(join(temporary,'public'))).sort(),['app.js','deployments.js','index.html','model.js','style.css']);
+    for(const name of await readdir(join(temporary,'public'))){const body=await readFile(join(temporary,'public',name),'utf8');assert.ok(!body.includes(record.prompt));assert.ok(!body.includes(src));assert.ok(!body.includes(env.AVATAR_RUNTIME_TOKEN));}
+    const privateRecords=JSON.parse(await readFile(join(temporary,'private','recorded.json'),'utf8'));
+    assert.equal(privateRecords.current.image.src,src);
+  }finally{await rm(temporary,{recursive:true,force:true});}
+});
