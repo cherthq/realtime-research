@@ -91,3 +91,9 @@ Separate Vercel hosting and an authenticated connection through the existing
 Cloudflare arrangement are still pending; this loopback server is not a public
 hosting/authentication solution. No Chert project, domain, database or control
 plane is modified by the optional local connection.
+
+The initial live integration was installed after an approved idle restart. Baseline
+prompt/image equality, authentication, stale writes, the image gate and the Ready
+web preview were verified. Recorded pre-integration history remains visible as
+read-only cards. Image changes are rejected in the dashboard before transmission
+until the runtime reports that renderer switching has passed acceptance.
