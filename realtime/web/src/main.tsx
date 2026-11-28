@@ -37,6 +37,7 @@ type Health = {
   control_transport?: 'sse' | 'poll';
   ui_asset?: string | null;
   camera_vision?: boolean;
+  call_recording_enabled?: boolean;
   tts_provider?: string;
   tts_configured?: boolean;
 };
@@ -919,6 +920,9 @@ function App({
         </div>
       )}
 
+      {health?.call_recording_enabled && (
+        <p role="note">This call is recorded: audio, video, and transcript.</p>
+      )}
       <section
         className={`video-pair ${cameraLarge ? 'camera-large' : 'avatar-large'}`}
         aria-label="Video call"
@@ -1513,8 +1517,11 @@ function App({
               {health?.camera_vision
                 ? 'During a live call, your enabled camera is shared with the AI. One recent image is used per spoken turn.'
                 : 'Your camera stays on this device.'}{' '}
-              This app does not save call recordings or transcripts. Conversation providers process
-              shared audio, images and text under their own retention policies.
+              {health?.call_recording_enabled
+                ? 'This call is recorded, including audio, video and transcript. '
+                : 'This app does not save call recordings or transcripts. '}
+              Conversation providers process shared audio, images and text under their own retention
+              policies.
             </p>
           </details>
           {onLock && (

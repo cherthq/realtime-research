@@ -115,7 +115,7 @@ Production environment variables:
 - `AVATAR_DEPLOYMENT_RECORDS`: sensitive recorded metadata with image SHA-256
   values; image data is hydrated from verified runtime history during the build.
 
-`npm run build` produces five public assets and a private function-only history
+`npm run build` produces eight public assets and a private function-only history
 file. The broad workspace credential is never sent to Vercel. Prompts, images and
 configuration credentials must never be committed or placed in static assets.
 Builds fail if recorded images cannot be verified against runtime history.
@@ -124,3 +124,31 @@ The hosted configuration UI works independently of the laptop. **Run local
 preview** still opens the existing loopback call page and needs the local preview
 connection; **Call on FaceTime** uses the native FaceTime handler on the device.
 Browser drafts are origin-specific and do not migrate from localhost.
+
+## Call logs
+
+The **Call logs** button opens `/calls.html`. Calls after recording is enabled are
+listed with channel, connected duration, status and transcript. Downloads include
+mixed audio, separate caller/agent WAV files, a side-by-side MP4 with both voices,
+and a plain-text transcript. Video is captured at 15 fps (960 × 360 composite);
+this does not change the live call renderer. Caller video appears only while the
+camera track is available. Existing GPT-Live transcripts are archived without
+additional transcription API requests.
+
+Enable `record_calls: true` in the existing private runtime configuration. Files
+and the SQLite ledger live in its private `calls/` subdirectory on the Lambda
+host. Earlier unrecorded calls cannot be reconstructed. Files are retained without
+automatic deletion. At 5 GiB remaining, recording stops with a visible error while
+calls continue. Operator backup/storage expansion is needed for indefinite archival;
+this host-local storage is not an independent backup.
+
+List/detail endpoints require the existing server credential. After Vercel sign-in,
+downloads use a five-minute HMAC ticket scoped to one call and file, support HTTP
+Range, and bypass serverless response-size limits. No recording enters Git or the
+static build. Recording failures and interrupted shutdowns remain visible in the
+ledger; partial recordings are never labeled complete.
+
+The optional recorder uses the existing LiveKit project and installed FFmpeg,
+with a subscribe-only room participant and two CPU encoding threads. It does not
+start a second GPU or require a new OpenAI key. FaceTime requests carry a channel
+header; the deployed companion's authenticated greeting also identifies FaceTime.

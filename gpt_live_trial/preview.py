@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from contextlib import ExitStack, asynccontextmanager
 import socket
+import hmac
 from unittest.mock import patch
 
 import uvicorn
@@ -85,6 +86,7 @@ def make_pair(baseline, trial_port):
             "camera_vision": trial_config.camera_vision,
             "web_search_enabled": trial_config.web_search_enabled,
             "document_retrieval": True,
+            "call_recording_enabled": bool(configuration and configuration.logs),
         }
 
     @routes.get("/api/preview/provider")
@@ -129,6 +131,7 @@ def make_pair(baseline, trial_port):
                         self.voice = LiveAgent(trial_config, self)
                         if configuration:
                             configuration.configure_voice(self.voice)
+                            configuration.configure_worker(self)
                     else:
                         super().__init__(
                             *args, voice_selection=voice_selection, **kwargs
@@ -155,6 +158,17 @@ def make_pair(baseline, trial_port):
     async def route(scope, receive, send):
         is_trial = scope["type"] != "lifespan" and scope["server"][1] == trial_port
         token = configuration.trial_request.set(is_trial) if configuration else None
+        source_token = None
+        if configuration and is_trial:
+            headers = dict(scope.get('headers', []))
+            source_token = configuration.call_source.set('facetime' if headers.get(b'x-call-source') == b'facetime' else 'web')
+            # The existing private FaceTime companion requests its greeting only
+            # after the handset joins. Keep that deployed companion compatible.
+            path = scope.get('path', '')
+            if path.startswith('/api/sessions/') and path.endswith('/greet'):
+                session = manager.sessions.get(path.split('/')[3])
+                if session and hmac.compare_digest(headers.get(b'x-session-key',b''), session.key.encode()) and (recorder := getattr(session.worker, 'call_recorder', None)):
+                    recorder.source = 'facetime'
         try:
             target = trial if is_trial else baseline
             if configuration and is_trial and scope.get("path") == "/api/avatar-config":
@@ -163,6 +177,8 @@ def make_pair(baseline, trial_port):
         finally:
             if configuration:
                 configuration.trial_request.reset(token)
+                if source_token is not None:
+                    configuration.call_source.reset(source_token)
 
     return route
 

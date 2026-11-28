@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node server.mjs",
     "preview:connect": "node preview-tunnel.mjs",
-    "check": "node --check dist/app.js && node --check dist/model.js && node --check dist/deployments.js && node --check server.mjs && node --check preview-tunnel.mjs && node --check api/configuration.js && node --check api/metadata.js && node --check lib/runtime-client.mjs && node --check build.mjs",
+    "check": "node --check dist/app.js && node --check dist/model.js && node --check dist/deployments.js && node --check server.mjs && node --check preview-tunnel.mjs && node --check api/configuration.js && node --check api/metadata.js && node --check lib/runtime-client.mjs && node --check build.mjs && node --check api/calls.js && node --check dist/calls.js",
     "test": "node --test tests/*.test.mjs",
     "build": "node build.mjs"
   },
