@@ -165,6 +165,7 @@ $('publish').addEventListener('click',async()=>{
   publishing=true;showError('');updateControls();
   try {
     const imageData=image?await asDataUrl(image.preview):null;
+    if(imageData!==runtime.current.image.src&&!runtime.imageUploadsEnabled)throw new Error('Image changes are not enabled yet. Use the current driving image to publish a prompt.');
     // Unchanged deployed image is kept byte-for-byte; prompt-only publication
     // does not re-encode the verified baseline or touch the renderer.
     await publishRequest({prompt:prompt.value,image:imageData===runtime.current.image.src?null:imageData,expectedRevision:runtime.revision});

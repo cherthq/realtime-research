@@ -19,6 +19,16 @@ export function validateDeployments(data) {
   return data;
 }
 
+export function deploymentHistory(runtime, recorded) {
+  if(!runtime)return recorded.previous.map(record=>({record,restorable:false}));
+  const seen=new Set([runtime.current.id]);
+  const result=[];
+  for(const [records,restorable] of [[runtime.previous,true],[recorded.previous,false]]) {
+    for(const record of records)if(!seen.has(record.id)){seen.add(record.id);result.push({record,restorable});}
+  }
+  return result;
+}
+
 function element(tag,className,text) {
   const node=document.createElement(tag);node.className=className;
   if(text!==undefined)node.textContent=text;
@@ -63,10 +73,11 @@ export async function loadDeployments({onRestore,onEdit}={}) {
         validateDeployments({...data,...runtime,recordedAt:runtime.current.date});
       }
     }catch {runtime=null;}
-    const records=runtime||data;
+    const records=runtime||data,history=deploymentHistory(runtime,data);
+    if(runtime&&data.current?.greeting)records.current={...records.current,greeting:data.current.greeting};
     status.textContent=runtime?'Live · Applies to new calls':data.recordedAt?`${data.verifiedAt?'Verified':'Last recorded'} ${data.verifiedAt||data.recordedAt} · Not live-synced`:'No deployment connected';
     document.getElementById('current-deployment').replaceChildren(records.current?card(records.current,{onEdit:runtime?onEdit:null}):element('p','empty-deployments','No deployment recorded.'));
-    document.getElementById('previous-deployments').replaceChildren(...(records.previous.length?records.previous.map(record=>card(record,{restore:Boolean(runtime&&onRestore),onRestore})):[element('p','empty-deployments','No previous deployments recorded.')]));
+    document.getElementById('previous-deployments').replaceChildren(...(history.length?history.map(({record,restorable})=>card(record,{restore:Boolean(restorable&&onRestore),onRestore})):[element('p','empty-deployments','No previous deployments recorded.')]));
     return runtime;
   } catch {status.textContent='Deployment records unavailable. Reload to retry.';return null;}
   finally {area.setAttribute('aria-busy','false');}
