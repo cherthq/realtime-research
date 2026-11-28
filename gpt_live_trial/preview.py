@@ -9,7 +9,7 @@ import hmac
 from unittest.mock import patch
 
 import uvicorn
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException
 from uvicorn.importer import import_from_string
 
 from realtime import app as serving
@@ -17,6 +17,7 @@ from realtime import worker
 from realtime.voices import VoiceService
 
 from .agent import LiveAgent, MODEL, VOICE, INSTRUCTIONS
+from .greeting import GreetingCache
 from avatar_config_runtime.runtime import install as install_configuration
 from realtime.config import ROOT
 
@@ -69,6 +70,22 @@ def make_pair(baseline, trial_port):
         trial_web.app = regular_web.app
 
     routes = APIRouter()
+
+    @routes.post("/api/sessions/{sid}/greet")
+    async def greet(sid: str, x_session_key: str = Header(default="")):
+        session = manager.get(sid, x_session_key)
+        async with session.lock:
+            if session.ended:
+                raise HTTPException(409, "Session ended")
+            voice = session.worker.voice
+            if not isinstance(voice, LiveAgent):
+                raise HTTPException(409, "Session does not support a Live greeting")
+            try:
+                await voice.greet()
+            except RuntimeError:
+                raise HTTPException(503, "Voice session unavailable") from None
+        return {"greeting_requested": True}
+
     original_health = next(
         r.endpoint for r in baseline.routes if r.path == "/api/health"
     )
@@ -131,6 +148,7 @@ def make_pair(baseline, trial_port):
                             worker.LIVE_VOICE_PENDING_SECONDS
                         )
                         self.voice = LiveAgent(trial_config, self)
+                        self.voice.greeting_cache = GreetingCache(ROOT / "runs/greeting-cache")
                         self.parallel_startup = True
                         if configuration:
                             configuration.configure_voice(self.voice)

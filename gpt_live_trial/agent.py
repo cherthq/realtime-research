@@ -74,12 +74,76 @@ class LiveAgent:
         self.words = ""
         self.peak_buffer_samples = 0
         self.tools = None
+        self.greeted = False
+        self.greeting_cache = None
+        self.greeting_clip = None
+        self.cached_greeting = False
+        self.greeting_status = "disabled"
+
+    async def greet(self):
+        """Only the authenticated bridge-ready request starts a greeting."""
+        from .greeting import greeting_text
+
+        async with self.lock:
+            if self.closed or self.failure or self.ws is None:
+                raise RuntimeError("Voice session unavailable")
+            if self.greeted:
+                return
+            if self.turns or self.last_caller_end is not None:
+                self.greeted = True
+                self.greeting_status = "skipped_caller_started"
+                return
+            text = greeting_text(getattr(self, "recording_enabled", False))
+            if self.greeting_clip is None:
+                await self.send(
+                    "session.instructions.append", delegation_id=None,
+                    content="The FaceTime call is now connected. Greet the caller now. "
+                    "Read the following exactly, without an introduction or explanation: "
+                    f"<say>{text}</say> Then listen for the caller's reply.",
+                )
+                self.greeting_status = "live_fallback"
+                self.greeted = True
+                return
+            # Tell the live model what is playing so its next reply has context.
+            # No microphone pause, separate audio track, renderer reset, or clip
+            # playback clock: the same PCM conditions and accompanies every frame.
+            await self.send(
+                "session.instructions.append", delegation_id=None,
+                content=f"The call is connected. A prerecorded greeting in your voice "
+                f"is now being played to the caller: <said>{text}</said> "
+                "Do not say or repeat this greeting. Stay silent until the caller "
+                "speaks, then respond naturally to their words. They may interrupt it.",
+            )
+            self.segment = "cached-greeting"
+            self.epoch = await self.sink.begin_voice_response(self.segment)
+            self.turns += 1
+            self.sink.transcripts.begin(self.segment, self.epoch)
+            self.first_audio_at = time.monotonic()
+            self.synthesized_samples = 0
+            self.words = text
+            self.pending_words.clear()
+            self.preroll.clear()
+            self._append(self.greeting_clip.pcm)
+            self.sink.buffer.finish(self.segment, self.epoch)
+            for sample, words in self.greeting_clip.cues:
+                self.sink.transcripts.cue(self.segment, sample, words)
+            self.sink.transcripts.finish(self.segment, self.synthesized_samples)
+            self.cached_greeting = self.greeted = True
+            self.greeting_status = "cached"
+            if event := getattr(self.sink, "generation_ready", None):
+                event.set()
 
     async def send(self, kind, **fields):
         await asyncio.wait_for(self.ws.send(json.dumps({"type": kind, **fields})), 3)
 
     async def start(self):
         try:
+            if self.greeting_cache:
+                from .greeting import greeting_text, identity
+                descriptor = identity(MODEL, VOICE, self.instructions,
+                                      greeting_text(getattr(self, "recording_enabled", False)))
+                self.greeting_clip = await asyncio.to_thread(self.greeting_cache.load, descriptor)
+                self.greeting_status = "ready" if self.greeting_clip else "miss"
             self.ws = await connect(
                 "wss://api.openai.com/v1/live/sessions",
                 additional_headers={
@@ -185,6 +249,10 @@ class LiveAgent:
             self._fail("GPT-Live voice stream failed")
 
     async def _caller(self, event):
+        if self._greeting_is_playing() and event["delta"].strip():
+            # Any actual caller words can interrupt the canned opening. Keep the
+            # existing backchannel policy for all subsequent live replies.
+            await self._cut()
         start, end = event["start_ms"], event["end_ms"]
         if (
             self.caller_id is None
@@ -216,6 +284,8 @@ class LiveAgent:
             self.caller_id = None
 
     def _words(self, piece):
+        if self._greeting_is_playing():
+            return
         if self.active:
             if self.tools:
                 self.tools.caption(self.segment)
@@ -226,7 +296,23 @@ class LiveAgent:
         else:
             self.pending_words.append(piece)
 
+    def _greeting_is_playing(self):
+        if not self.cached_greeting:
+            return False
+        if self.sink.response_active:
+            return True
+        self.cached_greeting = False
+        self.segment = self.epoch = None
+        self.words = ""
+        self.remainder = b""
+        return False
+
     async def _audio(self, data):
+        if self._greeting_is_playing():
+            # Silence or unsolicited model speech must never extend/replace
+            # the cached epoch, nor enter a different publication path.
+            self.received_samples += len(data) // 2
+            return
         if self.caller_id and time.monotonic() - self.caller_updated > 1.6:
             self._finish_caller()
         if self.segment and not self.active and not self.sink.response_active:
@@ -301,6 +387,7 @@ class LiveAgent:
         )
 
     async def _cut(self):
+        self.cached_greeting = False
         if self.epoch is not None:
             self.sink.transcripts.interrupt(
                 self.epoch, int(self.sink.estimated_played_ms() * 48)
@@ -338,6 +425,7 @@ class LiveAgent:
             interrupted=self.cuts,
             peak_queued_audio_ms=round(self.peak_buffer_samples / 48),
             failed=bool(self.failure),
+            greeting=self.greeting_status,
             tools=dict(self.tools.counts) if self.tools else {},
         )
 

@@ -64,3 +64,42 @@ Validate on the existing warm host with a synthetic receiver, then compare on a
 physical FaceTime handset. Keep first video, first audible response, and ringing
 separate. The target is first media within three seconds of bridge readiness;
 it is not a guarantee for cold loads, failed connections, or handset networking.
+
+## Cached FaceTime greeting
+
+The authenticated `POST /api/sessions/{id}/greet` request still waits for the
+FaceTime adapter's bridge-ready signal. A valid local greeting cache supplies the
+complete 48 kHz PCM immediately. AvatarForever renders that audio using the current
+call's image and continuous model history; `AudioClock.push_pair` publishes each
+frame with its matching PCM. There is no independent audio player, canned video
+splice, renderer reset, or additional connection to Chert. This removes voice
+generation latency; native video rendering and FaceTime transport still take time.
+
+The opening plays once per session. Actual caller words can interrupt it; queued
+audio and video follow the existing epoch cancellation path. The live model is
+told what the prerecorded opening says and instructed to wait for the caller.
+The normal recorder receives the same published tracks, and the transcript ledger
+uses cached caption offsets. Browser calls remain caller-first unless an authorized
+client explicitly requests a greeting.
+
+Prepare the cache explicitly on the existing host using its configured OpenAI key
+and a private file containing the exact current prompt:
+
+```sh
+.venv-realtime/bin/python -m gpt_live_trial.prepare_greeting \
+  --env-file /private/path/to/runtime.env \
+  --instructions-file /private/path/to/current-prompt.txt \
+  --cache-dir runs/greeting-cache --recording
+```
+
+This uses one short billable GPT-Live session, with no GPU, LiveKit room, FaceTime
+call, or ongoing idle voice connection. Omit `--recording` only for a deployment
+without call recording. It rejects a generated transcript that differs from the
+fixed opening, including the recording notice. Cache files are private, bounded,
+checksum-validated and atomically replaced; they are never committed. The key
+includes the model, voice, prompt hash, exact greeting, sample rate and format
+version. Changed prompts/voices/notices or missing/corrupt caches fall back to the
+live greeting until this preparation command is run again. Image changes remain
+safe because video is rendered live. Diagnostics report `greeting` as `ready`,
+`cached`, `miss`, `live_fallback`, or `skipped_caller_started` without exposing files
+or prompt contents. Removing the cache files disables reuse on subsequent calls.
