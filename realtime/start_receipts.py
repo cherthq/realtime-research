@@ -3,6 +3,7 @@
 Keys are caller secrets carried only in headers. Recovery never allocates a
 worker, even after expiry or a process restart. This is not durable storage.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,7 +40,10 @@ class StartReceipts:
         async with self.lock:
             now = self.clock()
             for old_key, entry in list(self.entries.items()):
-                if entry.completed is not None and now - entry.completed >= self.retention:
+                if (
+                    entry.completed is not None
+                    and now - entry.completed >= self.retention
+                ):
                     del self.entries[old_key]
             receipt = self.entries.get(key)
             if receipt is not None:
@@ -47,9 +51,13 @@ class StartReceipts:
                     raise HTTPException(409, "The call-start request has changed.")
             else:
                 if create is None:
-                    raise HTTPException(410, "The call-start result is unavailable or expired.")
+                    raise HTTPException(
+                        410, "The call-start result is unavailable or expired."
+                    )
                 if len(self.entries) >= self.capacity:
-                    raise HTTPException(503, "Call-start recovery is full. Try again later.")
+                    raise HTTPException(
+                        503, "Call-start recovery is full. Try again later."
+                    )
                 receipt = Receipt(fingerprint, asyncio.create_task(create()))
                 self.entries[key] = receipt
 
@@ -60,10 +68,14 @@ class StartReceipts:
 
                 receipt.task.add_done_callback(finished)
         if receipt.task.cancelled():
-            raise HTTPException(503, "The call start was cancelled. Reconnect the call.")
+            raise HTTPException(
+                503, "The call start was cancelled. Reconnect the call."
+            )
         return await asyncio.shield(receipt.task)
 
     async def close(self):
         # Startup has its own deadline; shutdown must not race it with teardown.
-        await asyncio.gather(*(r.task for r in self.entries.values()), return_exceptions=True)
+        await asyncio.gather(
+            *(r.task for r in self.entries.values()), return_exceptions=True
+        )
         self.entries.clear()
