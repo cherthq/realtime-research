@@ -83,6 +83,8 @@ class RuntimeConfiguration:
         start, close = worker.start, worker._close
 
         async def recorded_start():
+            if getattr(worker, 'parallel_startup', False):
+                return await start()
             try:
                 await recorder.start()
             except Exception:
