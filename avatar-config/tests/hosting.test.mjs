@@ -42,7 +42,7 @@ test('hosting build keeps private records out of static output',async()=>{
     const source=`globalThis.fetch=async()=>Response.json(${JSON.stringify(live)}); await import('./build.mjs');`;
     const built=spawnSync(process.execPath,['--input-type=module','-e',source],{cwd:temporary,env:{...process.env,...env,AVATAR_DEPLOYMENT_RECORDS:JSON.stringify(metadata)},encoding:'utf8'});
     assert.equal(built.status,0,built.stderr);
-    assert.deepEqual((await readdir(join(temporary,'public'))).sort(),['app.js','deployments.js','index.html','model.js','style.css']);
+    assert.deepEqual((await readdir(join(temporary,'public'))).sort(),['app.js','calls.css','calls.html','calls.js','deployments.js','index.html','model.js','style.css']);
     for(const name of await readdir(join(temporary,'public'))){const body=await readFile(join(temporary,'public',name),'utf8');assert.ok(!body.includes(record.prompt));assert.ok(!body.includes(src));assert.ok(!body.includes(env.AVATAR_RUNTIME_TOKEN));}
     const privateRecords=JSON.parse(await readFile(join(temporary,'private','recorded.json'),'utf8'));
     assert.equal(privateRecords.current.image.src,src);

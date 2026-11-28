@@ -6,7 +6,7 @@ import {runtimeRequest} from './lib/runtime-client.mjs';
 // Only this allowlist becomes web assets. Runtime credentials and historical
 // snapshots are never copied into the static output or browser JavaScript.
 await rm('public',{recursive:true,force:true});await mkdir('public');
-for(const name of ['index.html','style.css','app.js','model.js','deployments.js'])await cp(`dist/${name}`,`public/${name}`);
+for(const name of ['index.html','style.css','app.js','model.js','deployments.js','calls.html','calls.js','calls.css'])await cp(`dist/${name}`,`public/${name}`);
 const metadata=validateDeployments(JSON.parse(process.env.AVATAR_DEPLOYMENT_RECORDS));
 const response=await runtimeRequest();if(!response.ok)throw Error('Could not verify existing deployment during build');
 const live=await response.json();

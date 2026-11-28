@@ -10,6 +10,7 @@ from pathlib import Path
 import secrets
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .store import ConfigurationStore, InvalidConfiguration, RevisionConflict, normalize_image, validate_prompt
@@ -42,6 +43,8 @@ class RuntimeConfiguration:
         self.pinned = ContextVar('avatar_config_version', default=None)
         self.write_lock = asyncio.Lock()
         self.jobs = set()
+        self.call_source = ContextVar('avatar_call_source', default='web')
+        self.logs = None
         self.install_admission()
 
     def install_admission(self):
@@ -69,6 +72,30 @@ class RuntimeConfiguration:
             voice.instructions = version.prompt
             # Private in-process audit only; never added to public snapshots/room data.
             voice.configuration_version = version.id
+
+    def configure_worker(self, worker):
+        if self.logs is None:
+            return
+        from .recording import CallRecorder
+        recorder = CallRecorder(worker, self.logs, self.call_source.get())
+        worker.call_recorder = recorder
+        worker.voice.recording_enabled = True
+        start, close = worker.start, worker._close
+
+        async def recorded_start():
+            try:
+                await recorder.start()
+            except Exception:
+                recorder.error = 'Recording connection could not start'
+            await start()
+
+        async def recorded_close():
+            try:
+                await close()
+            finally:
+                await recorder.close()
+
+        worker.start, worker._close = recorded_start, recorded_close
 
     def authorize(self, request):
         supplied = request.headers.get('authorization', '')
@@ -162,7 +189,36 @@ class RuntimeConfiguration:
     def install_routes(self, app):
         @app.get('/api/avatar-config')
         async def read(request: Request):
+            query = request.query_params
+            operation = query.get('op')
+            if operation == 'download':
+                if self.logs is None or not self.logs.verify(query.get('id'), query.get('file'), query.get('expires'), query.get('signature', '')):
+                    raise HTTPException(403, 'Download link expired or invalid')
+                try:
+                    path, media = self.logs.file(query['id'], query['file'])
+                except (KeyError, ValueError):
+                    raise HTTPException(404, 'Recording not found') from None
+                return FileResponse(path, media_type=media, filename=query['id']+'-'+path.name,
+                                    headers={'Cache-Control':'private, no-store', 'Referrer-Policy':'no-referrer', 'X-Content-Type-Options':'nosniff'})
             self.authorize(request)
+            if operation in {'calls', 'call', 'ticket'}:
+                if self.logs is None:
+                    raise HTTPException(503, 'Call recording is not enabled')
+                try:
+                    if operation == 'calls':
+                        offset = int(query.get('offset', '0'))
+                        if not 0 <= offset <= 1000000:
+                            raise ValueError()
+                        return await asyncio.to_thread(self.logs.listing, offset)
+                    if operation == 'call':
+                        return await asyncio.to_thread(self.logs.get, query.get('id'))
+                    return await asyncio.to_thread(self.logs.ticket, query.get('id'), query.get('file'))
+                except ValueError:
+                    raise HTTPException(400, 'Invalid call request') from None
+                except KeyError:
+                    raise HTTPException(404, 'Recording not found') from None
+            if operation:
+                raise HTTPException(400, 'Unknown operation')
             return self.snapshot()
 
         @app.post('/api/avatar-config')
@@ -213,6 +269,9 @@ def install(app, manager, default_prompt, config_path: Path):
     runtime = RuntimeConfiguration(manager, store, avatar_id=avatar_id,
                                    token=config['admin_token'],
                                    image_switch_verified=config.get('image_switch_verified') is True)
+    if config.get('record_calls') is True:
+        from .call_logs import CallLogs
+        runtime.logs = CallLogs(config_path.parent / 'calls', config['admin_token'])
     runtime.api = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     runtime.api.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', '[::1]'])
     runtime.install_routes(runtime.api)

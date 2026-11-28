@@ -8,7 +8,7 @@ export async function startSession(origin = 'http://127.0.0.1:18837', fetcher = 
   const key = randomBytes(32).toString('hex');
   const options = {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-start-key': key },
+    headers: { 'content-type': 'application/json', 'x-start-key': key, 'x-call-source': 'facetime' },
     body: JSON.stringify(request),
   };
   const send = path => fetcher(origin + path, { ...options, signal: AbortSignal.timeout(20000) });
