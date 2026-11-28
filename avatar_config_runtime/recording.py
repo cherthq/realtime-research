@@ -292,27 +292,75 @@ class CallRecorder:
 
         def changed():
             original()
-            for row in worker.transcripts.snapshot()["utterances"]:
-                prior = self.rows.get(row["id"])
-                self.rows[row["id"]] = {
-                    **row,
-                    "seconds": prior["seconds"]
-                    if prior
-                    else round(
-                        max(
-                            0,
-                            time.monotonic()
-                            - (
-                                self.writer.started
-                                if self.writer and self.writer.started
-                                else self.start_time
-                            ),
-                        ),
-                        3,
-                    ),
-                }
+            self.capture_transcript()
 
         worker.transcripts._touch = changed
+        original_close = worker.transcripts.close
+
+        def close_ledger():
+            self.capture_transcript()
+            original_close()
+
+        worker.transcripts.close = close_ledger
+        original_begin = getattr(worker, "begin_voice_response", None)
+        if original_begin:
+
+            async def begin_response(*args, **kwargs):
+                self.capture_transcript()
+                return await original_begin(*args, **kwargs)
+
+            worker.begin_voice_response = begin_response
+
+    def capture_transcript(self):
+        worker = self.worker
+        for row in worker.transcripts.snapshot()["utterances"]:
+            raw = worker.transcripts.rows.get(row["id"], {})
+            # FaceTime has no browser frame receipts. Archive captions against
+            # the server's sent-audio clock without changing the UI ledger.
+            if row["speaker"] == "assistant" and raw.get("epoch") == getattr(
+                getattr(worker, "buffer", None), "epoch", None
+            ):
+                played = getattr(worker, "server_played_ms", lambda: 0)() * 48
+                total = raw.get("total")
+                if (
+                    total is not None
+                    and not getattr(worker, "response_active", True)
+                    and getattr(worker, "published_response_samples", 0) >= total
+                    and getattr(getattr(worker, "audio", None), "queued_duration", 1)
+                    == 0
+                ):
+                    played = max(played, total)
+                for position, text in raw.get("cues", []):
+                    if (
+                        0 < played
+                        and position <= played
+                        and len(text) > len(row["text"])
+                    ):
+                        row = {**row, "text": text}
+            prior = self.rows.get(row["id"])
+            if (
+                prior
+                and len(prior["text"]) > len(row["text"])
+                and row["state"] != "interrupted"
+            ):
+                row = {**row, "text": prior["text"]}
+            self.rows[row["id"]] = {
+                **row,
+                "seconds": prior["seconds"]
+                if prior
+                else round(
+                    max(
+                        0,
+                        time.monotonic()
+                        - (
+                            self.writer.started
+                            if self.writer and self.writer.started
+                            else self.start_time
+                        ),
+                    ),
+                    3,
+                ),
+            }
 
     async def start(self):
         self.writer = MediaWriter(self.folder)
@@ -430,7 +478,9 @@ class CallRecorder:
                 self.error or self.writer.error,
                 self.source,
             )
-            await asyncio.sleep(5)
+            for _ in range(50):
+                await asyncio.sleep(0.1)
+                self.capture_transcript()
 
     async def close(self):
         if self.closed:

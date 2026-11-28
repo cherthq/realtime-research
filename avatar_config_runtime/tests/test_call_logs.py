@@ -150,3 +150,29 @@ def test_transcript_archive_survives_rolling_window_and_close(tmp_path):
         assert len(saved) == 205
 
     asyncio.run(run())
+
+
+def test_facetime_transcript_uses_sent_audio_without_browser_receipts(tmp_path):
+    async def run():
+        worker = SimpleNamespace(
+            id=IDENT,
+            voice=None,
+            transcripts=TranscriptLedger(),
+            buffer=SimpleNamespace(epoch=1),
+            server_played_ms=lambda: 50,
+            response_active=True,
+            published_response_samples=2400,
+            audio=SimpleNamespace(queued_duration=0),
+        )
+        recorder = CallRecorder(worker, CallLogs(tmp_path, TOKEN), "facetime")
+        worker.transcripts.begin("reply", 1)
+        worker.transcripts.cue("reply", 1000, "Heard words")
+        worker.transcripts.cue("reply", 48000, "Heard words plus unplayed words")
+        assert not worker.transcripts.snapshot()["utterances"][0]["text"]
+        recorder.capture_transcript()
+        assert recorder.rows["assistant:reply"]["text"] == "Heard words"
+        worker.transcripts.close()
+        assert recorder.rows["assistant:reply"]["text"] == "Heard words"
+        await recorder.close()
+
+    asyncio.run(run())
