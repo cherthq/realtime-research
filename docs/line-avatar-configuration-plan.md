@@ -93,8 +93,9 @@ those changes; original bytes and a hash manifest are kept in ignored local file
 The user approved the next idle window. The six-file integration is now installed
 and the existing supervised backend/companion pair is healthy after an idle
 restart. The original prompt, image, greeting and output geometry were preserved.
-Next: run the trained renderer acceptance sequence, then enable image changes. Separate Vercel hosting
-and authenticated Cloudflare connectivity remain pending after runtime acceptance.
+Next: run the trained renderer acceptance sequence, then enable image changes.
+Separate Vercel hosting and authenticated Cloudflare connectivity are now installed
+and verified; see the hosted dashboard checkpoint below.
 
 ## Initial live rollout verification
 
@@ -109,4 +110,22 @@ and authenticated Cloudflare connectivity remain pending after runtime acceptanc
 - 46 focused runtime tests and 16 dashboard tests pass; browser console is clean.
 
 Image switching stays disabled in both the backend and dashboard publication
-path pending actual private-renderer acceptance. Cloud hosting remains pending.
+path pending actual private-renderer acceptance.
+
+## Hosted dashboard checkpoint — November 28
+
+- Production: https://realtime-avatar-dashboard.vercel.app/.
+- Independent Vercel project in Gary's personal workspace; all deployments require
+  Vercel Authentication. Anonymous page and API requests redirect to sign-in.
+- Server-only configuration proxy uses the narrow runtime credential. The existing
+  Cloudflare connector routes only `/api/avatar-config` to the existing backend.
+- Existing workspace route and avatar service remain healthy. The connector reload
+  needed its full shutdown window; final checks use local health plus external
+  verification, rather than the host's unreliable public self-check.
+- Authenticated hosted configuration and historical metadata return 200; all three
+  displayed driving images decode correctly. Browser console has no errors.
+- Runtime remains idle at revision 1 with its original prompt, greeting and image.
+  No test call or persona publication was performed.
+- 20 dashboard tests and syntax checks pass, including private build-artifact checks.
+- Hosted dashboard is independent of the laptop. The explicitly local preview
+  button still needs its local connection; native FaceTime uses the device handler.

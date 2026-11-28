@@ -87,13 +87,40 @@ The existing automatic FaceTime greeting is separate and remains unchanged.
 
 Runtime installation, maintenance and rollback are documented in
 [`avatar_config_runtime/README.md`](../avatar_config_runtime/README.md).
-Separate Vercel hosting and an authenticated connection through the existing
-Cloudflare arrangement are still pending; this loopback server is not a public
-hosting/authentication solution. No Chert project, domain, database or control
-plane is modified by the optional local connection.
+The loopback server is for development. Production hosting uses the separate
+Vercel project described below. No Chert dashboard, database or control plane is
+modified by this integration.
 
 The initial live integration was installed after an approved idle restart. Baseline
 prompt/image equality, authentication, stale writes, the image gate and the Ready
 web preview were verified. Recorded pre-integration history remains visible as
 read-only cards. Image changes are rejected in the dashboard before transmission
 until the runtime reports that renderer switching has passed acceptance.
+
+## Hosted dashboard
+
+Production: https://realtime-avatar-dashboard.vercel.app/ (Vercel sign-in required).
+This is the independent `realtime-avatar-dashboard` project in Gary's personal
+Vercel workspace, rooted at `avatar-config/`, running Node 24.
+
+Vercel Authentication must cover **all deployments**, including production.
+The server functions proxy only the existing runtime's `/api/avatar-config`.
+The existing Lambda Cloudflare connector routes that exact path to port 18837;
+its other workspace routes remain unchanged. No extra avatar/GPU service runs.
+
+Production environment variables:
+
+- `AVATAR_RUNTIME_URL`: HTTPS URL ending in `/api/avatar-config`.
+- `AVATAR_RUNTIME_TOKEN`: sensitive, scoped configuration credential only.
+- `AVATAR_DEPLOYMENT_RECORDS`: sensitive recorded metadata with image SHA-256
+  values; image data is hydrated from verified runtime history during the build.
+
+`npm run build` produces five public assets and a private function-only history
+file. The broad workspace credential is never sent to Vercel. Prompts, images and
+configuration credentials must never be committed or placed in static assets.
+Builds fail if recorded images cannot be verified against runtime history.
+
+The hosted configuration UI works independently of the laptop. **Run local
+preview** still opens the existing loopback call page and needs the local preview
+connection; **Call on FaceTime** uses the native FaceTime handler on the device.
+Browser drafts are origin-specific and do not migrate from localhost.
