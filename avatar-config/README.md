@@ -65,3 +65,29 @@ opening the existing call page. No test call is placed by these checks.
 
 Phase 2 is described in [the integration plan](../docs/line-avatar-configuration-plan.md).
 The dashboard remains independent of the Chert dashboard/control plane.
+
+## Phase 2 connection
+
+The optional integration adds **Publish**, **Edit** on the current deployment,
+and **Restore** on previous versions. **Save locally** still keeps a browser draft.
+Live controls appear only after an authenticated runtime read succeeds. A failed
+connection returns to the labeled recorded snapshot; it never simulates a publish.
+
+After the runtime integration is installed, put its separate configuration token
+in ignored mode-0600 `local/runtime.json` as `{"token":"<configuration token>"}`.
+The loopback dashboard server forwards only `/api/configuration` to the existing
+preview connection's `/api/avatar-config`. It checks Host/Origin, limits request
+size and keeps credentials server-side. No arbitrary upstream URL is accepted.
+
+The editor loads the current deployment on first use when no local draft exists.
+Subsequent refreshes preserve drafts. **Edit** requires saving unsaved edits first.
+A prompt-only publication preserves an unchanged deployed image byte-for-byte.
+Image switching remains gated until the actual trained renderer passes acceptance.
+The existing automatic FaceTime greeting is separate and remains unchanged.
+
+Runtime installation, maintenance and rollback are documented in
+[`avatar_config_runtime/README.md`](../avatar_config_runtime/README.md).
+Separate Vercel hosting and an authenticated connection through the existing
+Cloudflare arrangement are still pending; this loopback server is not a public
+hosting/authentication solution. No Chert project, domain, database or control
+plane is modified by the optional local connection.

@@ -24,7 +24,7 @@ function element(tag,className,text) {
   if(text!==undefined)node.textContent=text;
   return node;
 }
-function card(record) {
+function card(record,{restore,onRestore,onEdit}={}) {
   const article=element('article','deployment-card');
   const figure=element('figure','deployment-image');
   if(record.image.src){const img=element('img','');img.src=record.image.src;img.alt=record.image.label;figure.append(img);}
@@ -39,10 +39,12 @@ function card(record) {
   toggle.addEventListener('click',()=>{const expanded=prompt.classList.toggle('expanded');toggle.textContent=expanded?'Show less':'Show full prompt';toggle.setAttribute('aria-expanded',String(expanded));});
   content.append(meta,element('h3','','Prompt'),prompt,toggle);
   if(record.greeting){const details=element('details','greeting');details.append(element('summary','','FaceTime greeting'),element('p','',record.greeting));content.append(details);}
+  if(onEdit){const button=element("button","text-button","Edit");button.type="button";button.addEventListener("click",()=>onEdit(record));content.append(button);}
+  if(restore){const button=element("button","action restore","Restore");button.type="button";button.addEventListener("click",()=>onRestore(record.id));content.append(button);}
   article.append(figure,content);return article;
 }
 
-export async function loadDeployments() {
+export async function loadDeployments({onRestore,onEdit}={}) {
   const area=document.querySelector('.deployments'),status=document.getElementById('deployment-status');
   try {
     const response=await fetch('./deployments.json',{cache:'no-store'});
@@ -52,9 +54,20 @@ export async function loadDeployments() {
     preview.href=links.preview;preview.removeAttribute('aria-disabled');preview.title='Open the existing web call at '+links.preview;
     if(links.facetime){facetime.href=links.facetime;facetime.removeAttribute('aria-disabled');facetime.title=data.facetimeNumber;}
     else {facetime.removeAttribute('href');facetime.setAttribute('aria-disabled','true');facetime.title='No FaceTime number configured';}
-    status.textContent=data.recordedAt?`${data.verifiedAt?'Verified':'Last recorded'} ${data.verifiedAt||data.recordedAt} · Not live-synced`:'No deployment connected';
-    document.getElementById('current-deployment').replaceChildren(data.current?card(data.current):element('p','empty-deployments','No deployment recorded.'));
-    document.getElementById('previous-deployments').replaceChildren(...(data.previous.length?data.previous.map(card):[element('p','empty-deployments','No previous deployments recorded.')]));
-  } catch {status.textContent='Deployment records unavailable. Reload to retry.';}
+    let runtime=null;
+    try {
+      const live=await fetch('./api/configuration',{cache:'no-store'});
+      if(live.ok){
+        runtime=await live.json();
+        if(!Number.isSafeInteger(runtime.revision)||runtime.revision<1)throw new Error('Invalid revision');
+        validateDeployments({...data,...runtime,recordedAt:runtime.current.date});
+      }
+    }catch {runtime=null;}
+    const records=runtime||data;
+    status.textContent=runtime?'Live · Applies to new calls':data.recordedAt?`${data.verifiedAt?'Verified':'Last recorded'} ${data.verifiedAt||data.recordedAt} · Not live-synced`:'No deployment connected';
+    document.getElementById('current-deployment').replaceChildren(records.current?card(records.current,{onEdit:runtime?onEdit:null}):element('p','empty-deployments','No deployment recorded.'));
+    document.getElementById('previous-deployments').replaceChildren(...(records.previous.length?records.previous.map(record=>card(record,{restore:Boolean(runtime&&onRestore),onRestore})):[element('p','empty-deployments','No previous deployments recorded.')]));
+    return runtime;
+  } catch {status.textContent='Deployment records unavailable. Reload to retry.';return null;}
   finally {area.setAttribute('aria-busy','false');}
 }

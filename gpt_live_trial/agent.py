@@ -42,6 +42,7 @@ class LiveAgent:
 
     def __init__(self, settings, sink):
         self.settings, self.sink = settings, sink
+        self.instructions = INSTRUCTIONS
         self.in_resampler = PCMResampler(48000, RATE)
         self.out_resampler = PCMResampler(RATE, 48000)
         self.input = asyncio.Queue(maxsize=75)
@@ -94,7 +95,7 @@ class LiveAgent:
                 "session.start",
                 session=dict(
                     model=MODEL,
-                    instructions=INSTRUCTIONS,
+                    instructions=self.instructions,
                     audio=dict(
                         format={"type": "audio/pcm", "rate": RATE},
                         output={"voice": VOICE},

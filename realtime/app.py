@@ -171,7 +171,7 @@ class SessionManager:
                 else "diagnostic_only",
             }
             try:
-                image_path = self.catalog.image(session.avatar_id)
+                image_path = session.worker.catalog.image(session.avatar_id)
                 if image_path.is_file():
                     report["reference_sha256"] = digest(image_path.read_bytes())
                 await asyncio.to_thread(

@@ -75,3 +75,22 @@ old image with a new prompt. Deployment rollback must restore the whole pair.
 The running deployment's private paths and checksums are recorded in ignored
 local verification artifacts. No runtime write has been performed as of the
 Phase 1 commit. Phase 2 implementation follows this checkpoint.
+
+## Phase 2 implementation checkpoint — November 28
+
+Implemented locally on `codex/avatar-runtime-configuration`:
+
+- Private SQLite versions, hash-verified images, atomic publish/restore and CAS.
+- Opt-in trial-only authenticated API; a separate narrow admin token.
+- Per-call catalog/instructions binding with existing admission/start receipts.
+- Warm-renderer preparation, idle-only image switching and acceptance gate.
+- Dashboard Publish/Edit/Restore, real history reads and a same-origin local proxy.
+- Local integration browser verification of publish and whole-version restore.
+
+The actual private package has additional greeting and cleanup changes absent from
+main. A six-file candidate was staged against captured live source, preserving
+those changes; original bytes and a hash manifest are kept in ignored local files.
+The live service is still unchanged. Next: coordinate the required idle restart,
+install with image switching disabled, verify baseline behavior, run the trained
+renderer acceptance sequence, then enable image changes. Separate Vercel hosting
+and authenticated Cloudflare connectivity remain pending after runtime acceptance.
