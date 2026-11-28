@@ -9,9 +9,10 @@ from livekit import rtc
 
 
 class AudioClock:
-    def __init__(self, audio, video, epoch=lambda: None):
+    def __init__(self, audio, video, epoch=lambda: None, startup=None):
         self.audio, self.video = audio, video
         self.epoch = epoch
+        self.startup = startup
         self.audio_lock = asyncio.Lock()
         self.queue = asyncio.Queue(maxsize=5)
         self.captured = deque(maxlen=50)
@@ -31,6 +32,13 @@ class AudioClock:
             await self.audio.capture_frame(
                 rtc.AudioFrame(data, self.audio.sample_rate, 1, len(pcm))
             )
+            if (
+                self.startup
+                and "first_audio_captured" not in self.startup.events
+                and not stale
+                and pcm.any()
+            ):
+                self.startup.mark("first_audio_captured")
             due = time.monotonic() + self.audio.queued_duration - duration
         await self.queue.put((frame, due))
         if self.task.done():
@@ -46,6 +54,8 @@ class AudioClock:
                     self.max_lateness_ms, (time.monotonic() - due) * 1000
                 )
                 self.video.capture_frame(frame)
+                if self.startup:
+                    self.startup.mark("first_video_captured")
                 self.captured.append(time.monotonic())
             finally:
                 self.queue.task_done()

@@ -97,11 +97,19 @@ class PlaybackLedger:
 
 class TaggedVideoSource(rtc.VideoSource):
     def __init__(
-        self, width, height, ledger: PlaybackLedger, epoch, *, preserve_stale=False
+        self,
+        width,
+        height,
+        ledger: PlaybackLedger,
+        epoch,
+        *,
+        preserve_stale=False,
+        startup=None,
     ):
         super().__init__(width, height)
         self.ledger, self.epoch = ledger, epoch
         self.preserve_stale = preserve_stale
+        self.startup = startup
         # Decimate the paced native 25 FPS timeline without retiming its PCM.
         # Keep the first frame; preserve this phase across speech/idle epochs.
         self.rate_phase = FPS - 1
@@ -139,6 +147,8 @@ class TaggedVideoSource(rtc.VideoSource):
         super().capture_frame(
             frame, metadata=rtc.FrameMetadata(frame_id=ident), **kwargs
         )
+        if self.startup:
+            self.startup.mark("first_video_captured")
         self.rate_outputs += 1
         self.ledger.capture(ident, epoch, position, valid)
 

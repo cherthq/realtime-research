@@ -37,3 +37,30 @@ Run the local regression checks with `python -m pytest -q gpt_live_trial`. They 
 The [experiment log](../docs/avatar-experiment-log.md) records the browser replay results, timing measurements and open issues. To call this preview from an iPhone, follow the [FaceTime setup guide](../facetime/README.md).
 
 OpenAI documents the session and continuous audio event format in its [GPT-Live guide](https://developers.openai.com/api/docs/guides/live) and [WebSocket audio guide](https://developers.openai.com/api/docs/guides/voice-websockets).
+
+## Warm call startup
+
+GPT-Live workers overlap renderer preparation, LiveKit publication, the voice
+connection, and the optional call recorder. Other voice providers keep their
+existing startup order. Media publication starts when the renderer and transport
+are ready; the session response still waits for voice readiness and the recorder's
+avatar-audio subscription, so a caller is not admitted before recording is ready.
+Recording connection failures are bounded and shown in call logs without blocking
+the conversation. Cold model loading completes before opening voice sessions.
+
+`metrics.startup.events_ms` and `call_startup` log entries report monotonic offsets
+for each stage, caller connection, first captured video, and first non-silent audio.
+These are server measurements, not handset playback or FaceTime ringing times.
+They contain no prompts, transcripts, credentials, or media. Health reports
+`call_startup_state` as `warming`, `busy`, or `ready`.
+
+Startup failures and cancellation drain parallel tasks before room/voice/GPU
+cleanup. Warm renderer reuse, single-call admission, rendering geometry, media
+pacing, prompt configuration, and the private FaceTime greeting stay unchanged.
+A failed GPU operation may still retire the process through its existing recovery
+path. Neither recording nor paid voice connections are opened for idle standby.
+
+Validate on the existing warm host with a synthetic receiver, then compare on a
+physical FaceTime handset. Keep first video, first audible response, and ringing
+separate. The target is first media within three seconds of bridge readiness;
+it is not a guarantee for cold loads, failed connections, or handset networking.

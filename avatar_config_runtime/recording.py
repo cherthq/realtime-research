@@ -281,6 +281,7 @@ class CallRecorder:
         )
         self.writer = None
         self.room = rtc.Room()
+        self.avatar_audio_ready = asyncio.Event()
         self.tasks = set()
         self.track_tasks = {}
         self.rows = OrderedDict()
@@ -389,6 +390,8 @@ class CallRecorder:
             self.track_tasks[publication.sid] = task
             self.tasks.add(task)
             task.add_done_callback(self.done)
+            if role == "agent" and track.kind == rtc.TrackKind.KIND_AUDIO:
+                self.avatar_audio_ready.set()
 
         @self.room.on("track_muted")
         def muted(publication, participant):

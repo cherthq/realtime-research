@@ -34,6 +34,7 @@ from .camera import CameraInput
 from .transcripts import TranscriptLedger
 from .continuous import ContinuousRunner
 from .media_clock import AudioClock
+from .startup import StartupTrace, start_parallel
 
 
 def room_token(
@@ -76,6 +77,9 @@ class DemoWorker:
         gpu_pool=None,
     ):
         self.id = session_id
+        self.startup = StartupTrace(session_id)
+        self.startup_task = None
+        self.parallel_startup = False
         self.room_name = f"chert-{session_id}"
         self.settings = settings
         self.catalog = catalog
@@ -154,9 +158,10 @@ class DemoWorker:
             self.playback,
             lambda: self.buffer.epoch,
             preserve_stale=self.continuous_motion,
+            startup=self.startup,
         )
         self.sync = (
-            AudioClock(self.audio, self.video, lambda: self.buffer.epoch)
+            AudioClock(self.audio, self.video, lambda: self.buffer.epoch, self.startup)
             if self.continuous_motion or self.model_id == "mock"
             else rtc.AVSynchronizer(
                 audio_source=self.audio,
@@ -195,6 +200,21 @@ class DemoWorker:
         self.published_response_samples = 0
 
     async def start(self):
+        self.startup_task = asyncio.current_task()
+        try:
+            if self.parallel_startup:
+                await start_parallel(self)
+            else:
+                await self._prepare_renderer()
+                await self._connect_media()
+                self._start_media()
+                if self.voice:
+                    await self.voice.start()
+            self.startup.mark("session_ready")
+        finally:
+            self.startup_task = None
+
+    async def _prepare_renderer(self):
         if self.gpu_pool:
             self.gpu = await self.gpu_pool.acquire(
                 self.id, self.catalog.image(self.avatar_id)
@@ -204,12 +224,15 @@ class DemoWorker:
             await self.gpu.open_session(self.id, self.catalog.image(self.avatar_id))
             if self.settings.avatar_idle_motion and not self.continuous_motion:
                 await self.gpu.prepare_idle(self.catalog.image(self.avatar_id))
+
+    async def _connect_media(self):
         self.last_presence = time.monotonic()
 
         @self.room.on("participant_connected")
         def joined(participant):
             if participant.identity == "browser":
                 self.connected_user = True
+                self.startup.mark("caller_connected")
                 self.last_presence = time.monotonic()
 
         @self.room.on("participant_disconnected")
@@ -290,6 +313,8 @@ class DemoWorker:
                 source=rtc.TrackSource.SOURCE_MICROPHONE, stream="avatar"
             ),
         )
+
+    def _start_media(self):
         self.status = "listening"
         self.media_task = asyncio.create_task(
             self.continuous_runner.publish()
@@ -306,8 +331,6 @@ class DemoWorker:
                 else self._generate_gpu(),
                 name=f"generate-{self.id}",
             )
-        if self.voice:
-            await self.voice.start()
         self.caption_task = asyncio.create_task(self._publish_captions())
 
     async def _publish_captions(self):
@@ -650,6 +673,8 @@ class DemoWorker:
                         )
                     if batch.audio.epoch != self.buffer.epoch:
                         break
+                    if pcm.any():
+                        self.startup.mark("first_audio_captured")
                     last_frame = rgb
                     self.frames += 1
                     self.speech_frames += 1
@@ -731,6 +756,7 @@ class DemoWorker:
         fps = self.sync.actual_fps
         return {
             "state": self.status,
+            "startup": self.startup.snapshot(),
             "elapsed_seconds": round(elapsed, 2),
             "renderer": "avatarforever_bounded_v1"
             if self.model_id == "avatarforever"
@@ -886,6 +912,14 @@ class DemoWorker:
 
     async def _close(self):
         self.closed = True
+        # Drain connection tasks before releasing rooms or the shared GPU lease.
+        if (
+            getattr(self, "startup_task", None)
+            and not self.startup_task.done()
+            and self.startup_task is not asyncio.current_task()
+        ):
+            self.startup_task.cancel()
+            await asyncio.gather(self.startup_task, return_exceptions=True)
         self.transcripts.close()
         self.status = "closing"
         self.buffer.cancel()

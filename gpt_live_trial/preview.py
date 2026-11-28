@@ -76,8 +76,10 @@ def make_pair(baseline, trial_port):
     @routes.get("/api/health")
     async def health():
         configured = bool(trial_config.openai_api_key.get_secret_value())
+        base = await original_health()
         return {
-            **await original_health(),
+            **base,
+            "call_startup_state": "warming" if not base.get("avatarforever_ready") else "busy" if base.get("active_session") else "ready",
             "conversation_provider": MODEL,
             "conversation_model": MODEL,
             "voice_configured": configured,
@@ -129,6 +131,7 @@ def make_pair(baseline, trial_port):
                             worker.LIVE_VOICE_PENDING_SECONDS
                         )
                         self.voice = LiveAgent(trial_config, self)
+                        self.parallel_startup = True
                         if configuration:
                             configuration.configure_voice(self.voice)
                             configuration.configure_worker(self)
