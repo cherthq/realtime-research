@@ -69,3 +69,8 @@ h3 { font-size:12px; font-weight:600; color:#526078; margin:0 0 6px; }
 .greeting p { font-size:13px; line-height:1.65; color:#69758a; }
 .empty-deployments { font-size:13px; color:#7c8595; padding:18px 0; }
 @media(max-width:680px) { header { align-items:flex-start; flex-direction:column; gap:18px; } nav { width:100%; } .action { flex:1; font-size:12px; padding:10px; } .section-heading { align-items:flex-start; flex-direction:column; gap:7px; } .deployment-card { grid-template-columns:1fr; gap:20px; padding:22px; } .deployment-image { max-width:220px; } .call-note { margin-top:-12px; } }
+
+.editor-actions { display:flex; gap:10px; align-items:center; }
+.restore { display:block; margin-top:14px; }
+.deployment-content > .text-button + .text-button { margin-left:16px; }
+.section-heading > div { display:flex; gap:12px; align-items:center; }

@@ -65,3 +65,62 @@ opening the existing call page. No test call is placed by these checks.
 
 Phase 2 is described in [the integration plan](../docs/line-avatar-configuration-plan.md).
 The dashboard remains independent of the Chert dashboard/control plane.
+
+## Phase 2 connection
+
+The optional integration adds **Publish**, **Edit** on the current deployment,
+and **Restore** on previous versions. **Save locally** still keeps a browser draft.
+Live controls appear only after an authenticated runtime read succeeds. A failed
+connection returns to the labeled recorded snapshot; it never simulates a publish.
+
+After the runtime integration is installed, put its separate configuration token
+in ignored mode-0600 `local/runtime.json` as `{"token":"<configuration token>"}`.
+The loopback dashboard server forwards only `/api/configuration` to the existing
+preview connection's `/api/avatar-config`. It checks Host/Origin, limits request
+size and keeps credentials server-side. No arbitrary upstream URL is accepted.
+
+The editor loads the current deployment on first use when no local draft exists.
+Subsequent refreshes preserve drafts. **Edit** requires saving unsaved edits first.
+A prompt-only publication preserves an unchanged deployed image byte-for-byte.
+Image switching remains gated until the actual trained renderer passes acceptance.
+The existing automatic FaceTime greeting is separate and remains unchanged.
+
+Runtime installation, maintenance and rollback are documented in
+[`avatar_config_runtime/README.md`](../avatar_config_runtime/README.md).
+The loopback server is for development. Production hosting uses the separate
+Vercel project described below. No Chert dashboard, database or control plane is
+modified by this integration.
+
+The initial live integration was installed after an approved idle restart. Baseline
+prompt/image equality, authentication, stale writes, the image gate and the Ready
+web preview were verified. Recorded pre-integration history remains visible as
+read-only cards. Image changes are rejected in the dashboard before transmission
+until the runtime reports that renderer switching has passed acceptance.
+
+## Hosted dashboard
+
+Production: https://realtime-avatar-dashboard.vercel.app/ (Vercel sign-in required).
+This is the independent `realtime-avatar-dashboard` project in Gary's personal
+Vercel workspace, rooted at `avatar-config/`, running Node 24.
+
+Vercel Authentication must cover **all deployments**, including production.
+The server functions proxy only the existing runtime's `/api/avatar-config`.
+The existing Lambda Cloudflare connector routes that exact path to port 18837;
+its other workspace routes remain unchanged. No extra avatar/GPU service runs.
+
+Production environment variables:
+
+- `AVATAR_RUNTIME_URL`: HTTPS URL ending in `/api/avatar-config`.
+- `AVATAR_RUNTIME_TOKEN`: sensitive, scoped configuration credential only.
+- `AVATAR_DEPLOYMENT_RECORDS`: sensitive recorded metadata with image SHA-256
+  values; image data is hydrated from verified runtime history during the build.
+
+`npm run build` produces five public assets and a private function-only history
+file. The broad workspace credential is never sent to Vercel. Prompts, images and
+configuration credentials must never be committed or placed in static assets.
+Builds fail if recorded images cannot be verified against runtime history.
+
+The hosted configuration UI works independently of the laptop. **Run local
+preview** still opens the existing loopback call page and needs the local preview
+connection; **Call on FaceTime** uses the native FaceTime handler on the device.
+Browser drafts are origin-specific and do not migrate from localhost.

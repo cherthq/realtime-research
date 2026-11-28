@@ -15,7 +15,9 @@ from realtime import app as serving
 from realtime import worker
 from realtime.voices import VoiceService
 
-from .agent import LiveAgent, MODEL, VOICE
+from .agent import LiveAgent, MODEL, VOICE, INSTRUCTIONS
+from avatar_config_runtime.runtime import install as install_configuration
+from realtime.config import ROOT
 
 
 class TrialVoices(VoiceService):
@@ -99,6 +101,10 @@ def make_pair(baseline, trial_port):
 
     trial.router.routes[:0] = routes.routes
 
+    configuration = install_configuration(
+        trial, manager, INSTRUCTIONS, ROOT / "runs/avatar-config/runtime.json"
+    )
+
     original_lifespan = baseline.router.lifespan_context
 
     @asynccontextmanager
@@ -113,12 +119,16 @@ def make_pair(baseline, trial_port):
                         and voice_selection["profile"].get("provider") == MODEL
                     )
                     if self.is_live:
+                        if configuration:
+                            args = (*args[:3], configuration.worker_catalog(args[3]), *args[4:])
                         super().__init__(*args, voice_selection=None, **kwargs)
                         self.settings = trial_config
                         self.buffer.max_pending_seconds = (
                             worker.LIVE_VOICE_PENDING_SECONDS
                         )
                         self.voice = LiveAgent(trial_config, self)
+                        if configuration:
+                            configuration.configure_voice(self.voice)
                     else:
                         super().__init__(
                             *args, voice_selection=voice_selection, **kwargs
@@ -134,6 +144,8 @@ def make_pair(baseline, trial_port):
                 try:
                     yield
                 finally:
+                    if configuration:
+                        await configuration.close()
                     if receipts := getattr(trial.state, "start_receipts", None):
                         await receipts.close()
                     await trial.state.voices.close()
@@ -142,7 +154,15 @@ def make_pair(baseline, trial_port):
 
     async def route(scope, receive, send):
         is_trial = scope["type"] != "lifespan" and scope["server"][1] == trial_port
-        await (trial if is_trial else baseline)(scope, receive, send)
+        token = configuration.trial_request.set(is_trial) if configuration else None
+        try:
+            target = trial if is_trial else baseline
+            if configuration and is_trial and scope.get("path") == "/api/avatar-config":
+                target = configuration.api
+            await target(scope, receive, send)
+        finally:
+            if configuration:
+                configuration.trial_request.reset(token)
 
     return route
 

@@ -94,3 +94,61 @@ def test_facetime_start_recovery_uses_one_live_session(monkeypatch):
         await app.state.voices.close()
 
     asyncio.run(scenario())
+
+
+def test_opt_in_config_reaches_worker_without_public_catalog_changes(tmp_path, monkeypatch):
+    import json
+    from PIL import Image
+    from realtime.contracts import ResponseBuffer
+    from realtime.tests.test_core import FakeWorker
+    from gpt_live_trial.agent import INSTRUCTIONS
+
+    class Worker(FakeWorker):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.buffer = ResponseBuffer()
+
+    async def scenario():
+        monkeypatch.setattr('gpt_live_trial.preview.ROOT', tmp_path)
+        monkeypatch.setattr('realtime.app.ROOT', tmp_path)
+        monkeypatch.setattr('realtime.app.DemoWorker', Worker)
+        monkeypatch.setattr('realtime.app.delete_room', AsyncMock())
+        monkeypatch.setattr('realtime.app.room_token', lambda *args: 'test-room-token')
+        image = tmp_path / 'reference.png'
+        Image.new('RGB', (64, 48), 'red').save(image)
+        token = 'configuration-test-' + 'a' * 32
+        config_path = tmp_path / 'runs/avatar-config/runtime.json'
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text(json.dumps(dict(avatar_id='call07', admin_token=token)))
+        app = create_app(Settings(_env_file=None, avatarforever_enabled=True,
+                                  openai_api_key='test-only', demo_access_token='ordinary-preview'))
+        manager = app.state.manager
+        monkeypatch.setattr(manager.catalog, 'image', lambda _: image)
+        pair = make_pair(app, 18837)
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=pair), base_url='http://127.0.0.1:18837') as client:
+                admin = {'Authorization': 'Bearer ' + token}
+                assert (await client.get('/api/avatar-config')).status_code == 401
+                data = (await client.get('/api/avatar-config', headers=admin)).json()
+                assert data['current']['prompt'] == INSTRUCTIONS
+                assert (await client.get('http://127.0.0.1:18821/api/avatar-config', headers=admin)).status_code != 200
+                headers = {'x-start-key': 'a'*64, 'Authorization': 'Bearer ordinary-preview'}
+                body = dict(avatar_id='call07', model_id='avatarforever', mode='voice_diagnostic')
+                first = await client.post('/api/sessions', headers=headers, json=body)
+                assert first.status_code == 201, first.text
+                session = manager.sessions[first.json()['id']]
+                assert session.worker.voice.instructions == INSTRUCTIONS
+                assert session.worker.catalog.image('call07') != image
+                assert manager.catalog.image('call07') == image
+                updated = await client.post('/api/avatar-config', headers=admin, json=dict(prompt='New instructions', expectedRevision=1))
+                assert updated.status_code == 200, updated.text
+                assert session.worker.voice.instructions == INSTRUCTIONS
+                recovered = await client.post('/api/sessions/recover', headers=headers, json=body)
+                assert recovered.status_code == 201
+                assert recovered.json()['id'] == session.id
+                assert 'configuration_version' not in json.dumps(recovered.json())
+                await manager.close(session)
+                second = await client.post('/api/sessions', headers={**headers, 'x-start-key':'b'*64}, json=body)
+                assert second.status_code == 201, second.text
+                assert manager.sessions[second.json()['id']].worker.voice.instructions == 'New instructions'
+    asyncio.run(scenario())

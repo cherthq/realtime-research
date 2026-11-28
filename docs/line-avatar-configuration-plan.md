@@ -75,3 +75,57 @@ old image with a new prompt. Deployment rollback must restore the whole pair.
 The running deployment's private paths and checksums are recorded in ignored
 local verification artifacts. No runtime write has been performed as of the
 Phase 1 commit. Phase 2 implementation follows this checkpoint.
+
+## Phase 2 implementation checkpoint — November 28
+
+Implemented locally on `codex/avatar-runtime-configuration`:
+
+- Private SQLite versions, hash-verified images, atomic publish/restore and CAS.
+- Opt-in trial-only authenticated API; a separate narrow admin token.
+- Per-call catalog/instructions binding with existing admission/start receipts.
+- Warm-renderer preparation, idle-only image switching and acceptance gate.
+- Dashboard Publish/Edit/Restore, real history reads and a same-origin local proxy.
+- Local integration browser verification of publish and whole-version restore.
+
+The actual private package has additional greeting and cleanup changes absent from
+main. A six-file candidate was staged against captured live source, preserving
+those changes; original bytes and a hash manifest are kept in ignored local files.
+The user approved the next idle window. The six-file integration is now installed
+and the existing supervised backend/companion pair is healthy after an idle
+restart. The original prompt, image, greeting and output geometry were preserved.
+Next: run the trained renderer acceptance sequence, then enable image changes.
+Separate Vercel hosting and authenticated Cloudflare connectivity are now installed
+and verified; see the hosted dashboard checkpoint below.
+
+## Initial live rollout verification
+
+- Captured source/launch backups before installing; all six installed hashes match.
+- Existing supervisor retained the avatar-first startup order; both services ready.
+- Current prompt matches the recorded live prompt exactly; image bytes/hash match.
+- Output remains 640×480, 25 native / 24 publish fps, using GPT-Live 1.1.
+- Configuration API: unauthorized 401, stale update 409, image-change gate 409.
+- Validation left the imported baseline at revision 1; no persona was published.
+- Standalone dashboard now reads live configuration; older recorded cards remain.
+- Web preview reloaded to Ready. No test call was placed.
+- 46 focused runtime tests and 16 dashboard tests pass; browser console is clean.
+
+Image switching stays disabled in both the backend and dashboard publication
+path pending actual private-renderer acceptance.
+
+## Hosted dashboard checkpoint — November 28
+
+- Production: https://realtime-avatar-dashboard.vercel.app/.
+- Independent Vercel project in Gary's personal workspace; all deployments require
+  Vercel Authentication. Anonymous page and API requests redirect to sign-in.
+- Server-only configuration proxy uses the narrow runtime credential. The existing
+  Cloudflare connector routes only `/api/avatar-config` to the existing backend.
+- Existing workspace route and avatar service remain healthy. The connector reload
+  needed its full shutdown window; final checks use local health plus external
+  verification, rather than the host's unreliable public self-check.
+- Authenticated hosted configuration and historical metadata return 200; all three
+  displayed driving images decode correctly. Browser console has no errors.
+- Runtime remains idle at revision 1 with its original prompt, greeting and image.
+  No test call or persona publication was performed.
+- 20 dashboard tests and syntax checks pass, including private build-artifact checks.
+- Hosted dashboard is independent of the laptop. The explicitly local preview
+  button still needs its local connection; native FaceTime uses the device handler.

@@ -30,3 +30,10 @@ test('fresh checkouts have no private deployment data or callable number',()=>{
   assert.equal(validateDeployments(data),data);
   assert.equal(callLinks(data).facetime,null);
 });
+
+test('live connection retains recorded history without making snapshots restorable',async()=>{
+  const {deploymentHistory}=await import('../dist/deployments.js');
+  const live={current:{...record,id:'live-current'},previous:[{...record,id:'live-previous'}]};
+  assert.deepEqual(deploymentHistory(live,snapshot).map(({record,restorable})=>[record.id,restorable]),[['live-previous',true],['example-previous',false]]);
+  assert.deepEqual(deploymentHistory(null,snapshot).map(item=>item.restorable),[false]);
+});

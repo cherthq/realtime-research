@@ -62,6 +62,7 @@ def test_sync_fixture_has_known_silence_and_tone_windows():
 
 class FakeWorker:
     def __init__(self, *args, **kwargs):
+        self.catalog = args[3]
         self.status = "preparing"
         self.room_name = "test-room"
         self.connected_user = True

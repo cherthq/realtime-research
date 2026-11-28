@@ -43,10 +43,10 @@
       </div>
       <div id="error" class="error" role="alert" hidden></div>
       <button id="reload" class="text-button" type="button" hidden>Discard edits and load saved</button>
-      <footer><div><p>Saved in this browser. Not connected to live calls.</p><span id="save-status" role="status">Loading…</span></div><button id="save" class="primary" type="submit" disabled>Save locally</button></footer>
+      <footer><div><p id="save-note">Saved in this browser. Not connected to live calls.</p><span id="save-status" role="status">Loading…</span></div><div class="editor-actions"><button id="save" class="action" type="submit" disabled>Save locally</button><button id="publish" class="primary" type="button" hidden disabled>Publish</button></div></footer>
     </form>
     <section class="deployments" aria-label="Deployments" aria-busy="true">
-      <div class="section-heading"><h2>Current deployment</h2><span id="deployment-status" class="muted" role="status">Loading…</span></div>
+      <div class="section-heading"><h2>Current deployment</h2><div><span id="deployment-status" class="muted" role="status">Loading…</span> <button id="refresh-deployments" class="text-button" type="button">Refresh</button></div></div>
       <div id="current-deployment"></div>
       <h2 class="previous-heading">Previous deployments</h2>
       <div id="previous-deployments"></div>
