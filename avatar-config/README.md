@@ -1,0 +1,67 @@
+# Standalone avatar settings
+
+A separate dashboard for editing a prompt and driving image, viewing deployment
+history, and opening the existing browser or FaceTime call.
+
+```sh
+cd avatar-config
+npm run dev
+```
+
+Open http://127.0.0.1:4198. Requires Node 22+, with no package installation.
+
+Choose/drop a JPEG or PNG and optionally expand **Adjust crop**. The still preview
+is normalized to 640×480. **Save locally** stores the prompt and image together in
+IndexedDB with stale-tab conflict detection. Local saves do not change live calls.
+
+**Run local preview** opens the existing backend at http://127.0.0.1:18837.
+**Call on FaceTime** uses the configured number with Apple's native `facetime:`
+video-call handler. Calls use the deployed settings, not the saved local draft.
+
+## Private deployment records
+
+Fresh checkouts contain no private images, deployment records, credentials, or
+callable FaceTime number. Supply an ignored `local/deployments.json` to populate
+the dashboard. Use the shape of `dist/deployments.json` with these fields:
+
+- `previewUrl`: loopback HTTP URL for the existing web call.
+- `facetimeNumber`: E.164 phone number or `null` to disable the link.
+- `recordedAt`: ISO date, or `null` when no deployments exist.
+- Optional `verifiedAt`: ISO date of the latest read-only runtime verification.
+- `current`: deployment record or `null`.
+- `previous`: array of older deployment records.
+
+Each record has `id`, `date` (ISO date), `detail`, `prompt`, `greeting`, and an
+`image` object with `src`, `label`, and `note`. `src` is a PNG/JPEG base64 data URL
+or `null` for an unavailable image. Records are read-only snapshots, not a live
+subscription or a complete deployment ledger. Prompts can be expanded to read
+in full. Browser drafts never alter these records.
+
+Keep `local/` private and excluded from Git. The loopback server only serves its
+explicit allowlist; it never serves credential files. CSP permits same-origin
+snapshot reads and blocks external fetch/WebSocket requests.
+
+## Existing runtime connection
+
+Use an existing SSH tunnel to the backend, or the optional `npm run preview:connect`
+helper. The latter uses an already-authorized Lambda Jupyter workspace through its
+[terminal API](https://jupyter-server-terminals.readthedocs.io/en/latest/api.html).
+It needs ignored `local/connection.json` with `base` (HTTPS workspace URL) and
+`token` (existing credential). Protect this directory with mode 0700 and the file
+with mode 0600. Never publish or commit it.
+
+The helper creates one temporary terminal running an in-memory TCP relay to the
+existing backend on 127.0.0.1:18837. Its local listener is also loopback-only. It
+installs no packages, writes no remote source/configuration, and does not restart
+services or create another avatar backend. Ctrl-C or SIGTERM closes the listener
+and its own terminal. After abrupt termination, its terminal ID can be found in
+`local/tunnel-state.json` for cleanup.
+
+## Checks and integration status
+
+Run `npm run check` and `npm test`. Browser verification covers saved drafts,
+image decoding/cropping, conflicting tabs, deployment cards, mobile layout, and
+opening the existing call page. No test call is placed by these checks.
+
+Phase 2 is described in [the integration plan](../docs/line-avatar-configuration-plan.md).
+The dashboard remains independent of the Chert dashboard/control plane.
